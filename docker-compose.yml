@@ -1,10 +1,36 @@
-# THOR local control plane — filled in as modules land.
-# Day one (Module 1 / Wall): no long-running control-plane services yet. Rooms are created
-# directly by the provisioner against the host Docker daemon. The Wall API (PRD §6.1) can be
-# run ad hoc with `uvicorn wall.api:app`. As Modules 2+ land, ThorManager, Scheduler, CTO,
-# GovernanceEngine, Sentinel, SelfAudit, Gitea and the adapters get services here.
+# THOR control-plane dependencies (wiring Task 0).
+#
+# Fork 2 (approved): Postgres runs here; the control-plane SUPERVISOR runs on the WSL host via
+#   `python tools/start_thor.py`  (no docker.sock / Docker-out-of-Docker during the wiring phase).
+#
+# This declares the SAME `thor-postgres` container the supervisor expects (name + port + db + creds
+# match manager/pg.py's DSN: postgresql://postgres:thor@localhost:55432/thor). Bring Postgres up with
+#   docker compose up -d postgres
+# then start the control plane:
+#   python tools/start_thor.py
+# (If Postgres isn't already up, the supervisor bootstraps this same container itself — one command.)
+#
+# Rooms (the execution plane) are NOT defined here — they are created on demand and destroyed by the
+# Wall's Lifecycle Controller, one container per task (Bible §5.1).
 
-# NOTE: rooms (the execution plane) are NOT defined here — they are created on demand and
-# destroyed by the Wall's Lifecycle Controller, one container per task (Bible §5.1).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: thor-postgres
+    environment:
+      POSTGRES_PASSWORD: thor
+      POSTGRES_DB: thor
+    ports:
+      - "55432:5432"
+    labels:
+      thor.manager: postgres
+    volumes:
+      - thor_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d thor"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
-services: {}
+volumes:
+  thor_pgdata:
