@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import threading
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -51,6 +53,55 @@ from sentinel.core import Sentinel
 HOST = "127.0.0.1"
 PORTS = {"manager": 7100, "dashboard": 7080, "sentinel": 7140, "selfaudit": 7150}
 COCKPIT = REPO / "dashboard" / "cockpit.html"
+DASH_CSS = REPO / "dashboard" / "dashboard.css"   # the original watchdog's design system, verbatim
+
+
+class _LockedConn:
+    """
+    Thread-safe wrapper around ONE psycopg connection (run-target plumbing — NOT a module change).
+
+    The control plane shares one ledger connection, but uvicorn serves the sync HTTP endpoints in a
+    worker-thread pool and the cockpit fires several requests in parallel — concurrent use of a single
+    psycopg connection raises. This serializes every `with conn.cursor()` block behind one re-entrant
+    lock, so concurrent HTTP-served access is safe. Modules are untouched: they still call
+    `conn.cursor()` / `conn.commit()`. (Relates to register M4; the proper fix is a pool, later.)
+    """
+
+    def __init__(self, conn) -> None:
+        self._conn = conn
+        self._lock = threading.RLock()
+
+    def cursor(self, *a, **k):
+        return _LockedCursor(self._conn, self._lock, a, k)
+
+    def commit(self):
+        with self._lock:
+            return self._conn.commit()
+
+    def __getattr__(self, name):           # pass through everything else (execute, close, info, ...)
+        return getattr(self._conn, name)
+
+
+class _LockedCursor:
+    """A cursor context manager that holds the connection lock for the whole `with` block."""
+
+    def __init__(self, conn, lock, a, k) -> None:
+        self._conn, self._lock, self._a, self._k, self._cur = conn, lock, a, k, None
+
+    def __enter__(self):
+        self._lock.acquire()
+        try:
+            self._cur = self._conn.cursor(*self._a, **self._k)
+            return self._cur.__enter__()
+        except Exception:
+            self._lock.release()
+            raise
+
+    def __exit__(self, *exc):
+        try:
+            return self._cur.__exit__(*exc)
+        finally:
+            self._lock.release()
 
 
 def _pg_reachable() -> bool:
@@ -70,7 +121,7 @@ def boot() -> list[tuple[object, int]]:
         print("[thor] DB        Postgres not reachable — bootstrapping thor-postgres ...")
         pg.start()
         print(f"[thor] DB        up at {pg.DSN}")
-    conn = db.connect()
+    conn = _LockedConn(db.connect())       # thread-safe: the control plane serves HTTP off one conn
     db.init_schema(conn)
 
     # ---- 2) CTO — the brain (shared planner/escalation head) ----
@@ -95,7 +146,7 @@ def boot() -> list[tuple[object, int]]:
 
     # ---- 7) Self-Audit — the read-only correctness eyes (peer; real model wired at T9) ----
     sa_db.setup(conn)                      # create the read-only selfaudit role + tables (idempotent)
-    selfaudit = SelfAudit(sa_db.connect_readonly(), sentinel=sentinel)
+    selfaudit = SelfAudit(_LockedConn(sa_db.connect_readonly()), sentinel=sentinel)
     print("[thor] SelfAudit correctness eyes up — read-only DB role (real model wired at T9)")
 
     # ---- 8) Operator surface — the Dashboard window over the one truth ----
@@ -106,9 +157,11 @@ def boot() -> list[tuple[object, int]]:
     dashboard_api.bind(dashboard)
     sentinel_api.bind(sentinel)
     selfaudit_api.bind(selfaudit)
-    dashboard_api.app.add_api_route(       # serve the cockpit at :7080/ so live state is visible
+    dashboard_api.app.add_api_route(       # serve the cockpit + shared theme at :7080/
         "/", lambda: FileResponse(str(COCKPIT)), include_in_schema=False)
-    print("[thor] HTTP      surfaces bound; cockpit mounted at :7080/")
+    dashboard_api.app.add_api_route(
+        "/dashboard.css", lambda: FileResponse(str(DASH_CSS)), include_in_schema=False)
+    print("[thor] HTTP      surfaces bound; cockpit + design system mounted at :7080/")
 
     return [
         (manager_api.app, PORTS["manager"]),
@@ -118,12 +171,18 @@ def boot() -> list[tuple[object, int]]:
     ]
 
 
-async def serve(apps: list[tuple[object, int]]) -> None:
-    servers = []
+def _run_server(app: object, port: int) -> None:
+    # Each uvicorn server gets its OWN thread + event loop. Running several servers in one shared
+    # asyncio loop (asyncio.gather) breaks the sync-endpoint threadpool; one-loop-per-server is clean.
+    asyncio.set_event_loop(asyncio.new_event_loop())
+    srv = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="warning"))
+    srv.install_signal_handlers = lambda: None
+    asyncio.get_event_loop().run_until_complete(srv.serve())
+
+
+def serve(apps: list[tuple[object, int]]) -> None:
     for app, port in apps:
-        srv = uvicorn.Server(uvicorn.Config(app, host=HOST, port=port, log_level="warning"))
-        srv.install_signal_handlers = lambda: None   # one process hosts 4 servers — handle Ctrl-C at main
-        servers.append(srv)
+        threading.Thread(target=_run_server, args=(app, port), daemon=True).start()
     print("\n" + "=" * 72)
     print(" THOR control plane UP")
     print(f"   Manager    http://{HOST}:{PORTS['manager']}")
@@ -132,12 +191,13 @@ async def serve(apps: list[tuple[object, int]]) -> None:
     print(f"   Self-Audit http://{HOST}:{PORTS['selfaudit']}")
     print(" Ctrl-C to stop")
     print("=" * 72 + "\n", flush=True)
-    await asyncio.gather(*(s.serve() for s in servers))
+    while True:
+        time.sleep(3600)
 
 
 def main() -> int:
     try:
-        asyncio.run(serve(boot()))
+        serve(boot())
     except KeyboardInterrupt:
         print("\n[thor] shutting down")
     return 0

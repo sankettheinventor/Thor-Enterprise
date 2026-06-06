@@ -1,56 +1,250 @@
 <!doctype html>
 <!--
-  THOR PM Surface — minimal static cockpit (evolves ceo.html). Vanilla JS, no build step.
-  A WINDOW, NOT A BRAIN: it only reads projections from the DashboardAPI (:7080) and writes back
-  direction + signatures. The full React UI (PRD §4) is a deferred presentation layer over this
-  same API. Served statically; point API_BASE at the DashboardAPI.
+  THOR — PM Surface cockpit. The operator's WINDOW over the one truth.
+  STYLE: dashboard/dashboard.css — the original watchdog's design system, copied VERBATIM (Figtree +
+  JetBrains Mono, the kb-*/acard/feed-row/status-card/trust-bar component set). This file emits exactly
+  the markup those classes expect and wires it to OUR DashboardAPI (:7080). Four quadrants per the PM
+  Surface PRD: Direct · Watch · Decide · Audit. READ-ONLY at this checkpoint — click-to-Sign is T7.
 -->
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>THOR — Cockpit</title>
-  <style>
-    body { font-family: system-ui, sans-serif; margin: 0; background: #0f1115; color: #e6e6e6; }
-    header { padding: 12px 18px; background: #161a22; border-bottom: 1px solid #262b36; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px; }
-    .panel { background: #161a22; border: 1px solid #262b36; border-radius: 10px; padding: 12px; }
-    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #8aa0c0; margin: 0 0 8px; }
-    .card { background: #1d2430; border-radius: 8px; padding: 10px; margin: 6px 0; }
-    button { background: #2d6cdf; color: #fff; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-    .disc { color: #ff6b6b; font-weight: 600; }
-    .col { font-size: 12px; color: #9aa7bd; }
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="theme-color" content="#EDEBE3"/>
+<title>THOR · Cockpit</title>
+<link rel="stylesheet" href="/dashboard.css"/>
+<style>
+  /* the only local rule: arrange the four PM-Surface quadrants (Direct/Watch/Decide/Audit) */
+  .content{padding:18px 18px 40px}
+  .quad{display:grid;grid-template-columns:1fr;gap:16px}
+  @media(min-width:1000px){.quad{grid-template-columns:1fr 1fr}}
+  .quad > section{background:var(--s0);border:1px solid var(--line);border-radius:var(--r3);padding:18px 20px;box-shadow:var(--sh0);min-width:0}
+  .kb-board{flex-direction:row;overflow-x:auto;gap:10px}
+  .kb-col{min-width:140px;flex:1;min-height:160px;max-height:none}
+  .activity{margin-top:0;border:none;box-shadow:none;padding:0}
+</style>
 </head>
 <body>
-  <header><strong>THOR Cockpit</strong> — <span id="conn">connecting…</span></header>
-  <div class="grid">
-    <div class="panel"><h2>Kanban — Direct</h2><div id="kanban"></div></div>
-    <div class="panel"><h2>Live rooms — Watch</h2><div id="rooms"></div></div>
-    <div class="panel"><h2>Approval queue — Decide</h2><div id="cards"></div></div>
-    <div class="panel"><h2>Audit feed — Audit</h2><div id="audit"></div></div>
+
+<header class="topbar" role="banner">
+  <div class="logo"><div class="logo-mark" aria-hidden="true">T</div>
+    <div><span class="logo-text">THOR</span><span class="logo-sub">Cockpit · PM Surface</span></div></div>
+  <div class="topbar-spacer"></div>
+  <div class="topbar-right">
+    <span class="chip c-neutral" title="Interactive signing is wired at Task 7">read-only · sign at T7</span>
+    <div class="live-pill" style="display:flex"><span class="np-live"></span> <span id="live-text">connecting…</span></div>
   </div>
-  <script>
-    const API_BASE = location.origin;  // point at the DashboardAPI (:7080)
-    async function get(p) { const r = await fetch(API_BASE + p); if (!r.ok) throw 0; return r.json(); }
-    async function refresh() {
-      try {
-        const s = await get('/state/summary');
-        if (!s.connected) { document.getElementById('conn').innerHTML = '<span class="disc">DISCONNECTED — data may be out of date (signing disabled)</span>'; return; }
-        document.getElementById('conn').textContent = 'connected';
-        const k = await get('/kanban');
-        document.getElementById('kanban').innerHTML = Object.entries(k.columns)
-          .map(([c, fs]) => `<div class="col"><b>${c}</b>: ${fs.map(f => f.feature_id).join(', ') || '—'}</div>`).join('');
-        const rooms = (await get('/rooms/live')).active;
-        document.getElementById('rooms').innerHTML = rooms.map(r => `<div class="card">${r.feature_id} · ${r.stage} · ${r.status}</div>`).join('') || '—';
-        const cards = (await get('/cards')).cards;
-        document.getElementById('cards').innerHTML = cards.map(c => `<div class="card"><b>${c.type}</b> (${c.feature_id})<br><small>${c.legible_reason}</small><br><button>Sign</button></div>`).join('') || 'no pending decisions';
-        const ev = (await get('/audit/feed')).events.slice(-8).reverse();
-        document.getElementById('audit').innerHTML = ev.map(e => `<div class="col">#${e.seq} ${e.event_type} <small>(${e.actor})</small></div>`).join('');
-      } catch (e) {
-        document.getElementById('conn').innerHTML = '<span class="disc">DISCONNECTED</span>';
-      }
+</header>
+
+<main class="content">
+
+  <!-- SAFE / WARN / BAD system banner -->
+  <div class="trust-bar warn" id="trust-bar">
+    <div class="dot"></div>
+    <span class="lead" id="trust-text">THOR · connecting…</span>
+    <span class="meta" id="trust-detail"></span>
+    <span class="uptime" id="trust-uptime"></span>
+  </div>
+
+  <!-- glance stats (status-card idiom) -->
+  <div class="status-row">
+    <div class="status-card"><div class="top"><span class="label">Decisions waiting</span></div><div class="stat" id="st-pending">0</div><div class="sublabel" id="st-pending-sub">nothing waiting</div></div>
+    <div class="status-card"><div class="top"><span class="label">Governance</span></div><div class="stat" id="st-gov">—</div><div class="sublabel" id="st-gov-sub">sentinel + self-audit</div></div>
+    <div class="status-card"><div class="top"><span class="label">System meta-trust</span></div><div class="stat" id="st-trust">—</div><div class="sublabel">system reliability</div></div>
+    <div class="status-card"><div class="top"><span class="label">Token spend</span></div><div class="stat" id="st-spend">0</div><div class="sublabel" id="st-spend-sub">of cap</div></div>
+  </div>
+
+  <!-- FOUR QUADRANTS -->
+  <div class="quad">
+
+    <section>
+      <div class="panel-head"><h2>Direct</h2><span class="panel-sub">kanban</span><span class="chip c-neutral" id="kb-count" style="margin-left:auto">—</span></div>
+      <div class="kb-board" id="kanban"></div>
+    </section>
+
+    <section>
+      <div class="panel-head"><h2>Watch</h2><span class="panel-sub">live rooms + cost</span><span class="chip c-ok" id="rooms-count" style="margin-left:auto">0</span></div>
+      <div id="rooms"></div>
+      <div class="divider"></div>
+      <div id="cost"></div>
+    </section>
+
+    <section>
+      <div class="panel-head"><h2>Decide</h2><span class="panel-sub">approval queue</span><span class="chip c-brand" id="cards-count" style="margin-left:auto">0</span></div>
+      <div id="cards"></div>
+    </section>
+
+    <section>
+      <div class="activity">
+        <div class="activity-head"><span class="activity-title">Audit · ledger feed</span><span class="activity-meta" id="feed-count">live</span></div>
+        <div class="activity-body" id="audit"></div>
+      </div>
+      <div class="f11 ink3 mono" style="margin-top:8px">Every row is a signed, hash-chained event from the Manager's ledger — not the cook's claim.</div>
+    </section>
+
+  </div>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const POLL_MS = 2500;
+  const $ = id => document.getElementById(id);
+  let failCount = 0;
+
+  // ── helpers (harvested from the original dashboard's idioms) ──
+  const esc = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  function relTime(ts){
+    if (ts == null || ts === '') return '';
+    let sec;
+    if (typeof ts === 'number') sec = (Date.now()/1000) - ts;       // ledger ts = unix epoch seconds
+    else { try { sec = (Date.now() - new Date(ts).getTime())/1000; } catch { return String(ts); } }
+    if (sec < 0) sec = 0;
+    if (sec < 60) return Math.floor(sec) + 's ago';
+    if (sec < 3600) return Math.floor(sec/60) + 'm ago';
+    if (sec < 86400) return Math.floor(sec/3600) + 'h ago';
+    return Math.floor(sec/86400) + 'd ago';
+  }
+  async function get(p){ const r = await fetch(location.origin + p, {cache:'no-store'}); if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+  const live = t => { const el = $('live-text'); if (el) el.textContent = t; };
+
+  // ── trust bar ──
+  function renderTrust(summary){
+    const bar = $('trust-bar'), h = summary.health || {};
+    const alive = h.sentinel && h.sentinel.alive;
+    bar.className = 'trust-bar ' + (alive ? 'safe' : 'warn');
+    $('trust-text').textContent = alive ? 'THOR · live — governance up' : 'THOR · governance degraded';
+    $('trust-detail').textContent = (h.self_audit_meta_trust != null ? 'meta-trust ' + Math.round(h.self_audit_meta_trust*100) + '%' : '');
+    $('trust-uptime').textContent = 'ledger connected';
+  }
+  function renderDisconnected(){
+    $('trust-bar').className = 'trust-bar bad';
+    $('trust-text').textContent = 'THOR · DISCONNECTED — data may be stale; signing disabled';
+    $('trust-detail').textContent = ''; $('trust-uptime').textContent = '';
+    live('offline');
+  }
+
+  // ── glance stats ──
+  function renderStats(summary, cards, costData, findings){
+    $('st-pending').textContent = cards.length;
+    $('st-pending-sub').textContent = cards.length ? 'in the Decide queue' : 'nothing waiting';
+    const alive = summary.health && summary.health.sentinel && summary.health.sentinel.alive;
+    const gov = $('st-gov'); gov.textContent = alive ? 'up' : 'down'; gov.className = 'stat ' + (alive ? 'ok' : 'bad');
+    $('st-gov-sub').textContent = (findings && findings.length ? findings.length + ' checker findings' : 'sentinel + self-audit');
+    const mt = summary.health ? summary.health.self_audit_meta_trust : null;
+    $('st-trust').textContent = mt != null ? Math.round(mt*100) + '%' : '—';
+    const sp = $('st-spend'); sp.textContent = (costData.total_spent || 0).toLocaleString();
+    sp.className = 'stat ' + (costData.over_cap ? 'bad' : costData.alert ? 'warn' : '');
+    $('st-spend-sub').textContent = costData.cap ? 'of ' + costData.cap.toLocaleString() + (costData.alert ? ' · ALERT' : '') : 'no cap set';
+  }
+
+  // ── Direct · kanban (kb-* idiom) ──
+  const COL = [['backlog','queued','Backlog'],['ready','queued','Ready'],['building','building','Building'],
+               ['in_qa','planning','In QA'],['awaiting_signature','planning','Awaiting sig'],['done','done','Done']];
+  function renderKanban(columns){
+    let total = 0;
+    $('kanban').innerHTML = COL.map(([key,dot,label]) => {
+      const items = columns[key] || []; total += items.length;
+      const body = items.length ? items.map(f =>
+        '<div class="kb-card"><div class="kb-card-top"><span class="kb-badge feature">' + esc(f.feature_id) + '</span>' +
+        (f.priority != null ? '<span class="kb-priority p' + Math.min(2, f.priority) + '">P' + esc(f.priority) + '</span>' : '') + '</div>' +
+        '<div class="kb-title">' + esc(f.title || f.feature_id) + '</div></div>').join('')
+        : '<div class="f11 ink3" style="padding:4px 2px">—</div>';
+      return '<div class="kb-col"><div class="kb-col-header"><span class="kb-col-dot ' + dot + '"></span>' +
+        '<span class="kb-col-label">' + label + '</span><span class="kb-col-count">' + items.length + '</span></div>' +
+        '<div class="kb-col-body">' + body + '</div></div>';
+    }).join('');
+    $('kb-count').textContent = total + ' features';
+  }
+
+  // ── Watch · rooms + cost ──
+  function renderRooms(active){
+    $('rooms-count').textContent = active.length;
+    $('rooms').innerHTML = active.length ? active.map(r =>
+      '<div class="editing-strip"><span class="pulse"></span><span class="lbl">' + esc(r.stage) + '</span>' +
+      '<span class="file">' + esc(r.feature_id) + ' · ' + esc(r.room_id) + '</span>' +
+      '<span class="when">' + esc(r.status) + '</span></div>').join('')
+      : '<div class="kb-empty"><div class="icon">○</div><p>No rooms running — the Scheduler provisions one when a feature is built.</p></div>';
+  }
+  function renderCost(c){
+    const pct = c.cap ? Math.min(100, Math.round((c.total_spent / c.cap) * 100)) : 0;
+    const cls = c.over_cap ? 'bad' : c.alert ? 'warn' : 'ok';
+    $('cost').innerHTML =
+      '<div class="metrics-strip" style="border:none;margin:0;padding:6px 2px">' +
+        '<div class="metric"><span class="m-lbl">Spend</span><span class="m-val ' + (c.alert?'alert':'') + '">' + (c.total_spent||0).toLocaleString() + (c.cap?' / '+c.cap.toLocaleString():'') + '</span></div>' +
+        '<div class="metric"><span class="m-lbl">Est</span><span class="m-val">' + (c.total_est||0).toLocaleString() + '</span></div>' +
+        '<div class="metric"><span class="m-lbl">Features</span><span class="m-val">' + (c.per_feature?c.per_feature.length:0) + '</span></div>' +
+      '</div>' +
+      (c.cap ? '<div class="build-spot-bar" style="margin-top:6px"><div class="build-spot-fill" style="width:' + pct + '%;background:var(--' + cls + ')"></div></div>' : '');
+  }
+
+  // ── Decide · approval cards (acard idiom, read-only) ──
+  const CARD_META = {
+    merge:   { sev:'bad',  tag:'merge to main',  title:f=>'Approve the merge — '+f },
+    qa_fail: { sev:'warn', tag:'re-work ticket', title:f=>'Authorize re-work — '+f },
+    plan:    { sev:'ok',   tag:'begin building', title:f=>'Approve the plan — '+f },
+  };
+  function renderCards(cards){
+    $('cards-count').textContent = cards.length;
+    if (!cards.length){ $('cards').innerHTML = '<div class="panel-empty"><div class="icon">✓</div><h3>Nothing waiting</h3><p>The cooks are working within scope. Cards appear here when your signature is needed.</p></div>'; return; }
+    $('cards').innerHTML = cards.map(card => {
+      const m = CARD_META[card.type] || { sev:'info', tag:esc(card.type), title:f=>(card.type+' — '+f) };
+      return '<div class="acard ' + m.sev + '">' +
+        '<div class="acard-head"><span class="acard-tag ' + m.sev + '">' + m.tag + '</span><span class="acard-time">' + esc(card.status) + '</span></div>' +
+        '<div class="acard-title">' + esc(m.title(card.feature_id)) + '</div>' +
+        '<div class="acard-desc">' + esc(card.legible_reason) + '</div>' +
+        '<div class="acard-facts">' +
+          '<div><div class="acard-fact-lbl">Feature</div><div class="acard-fact-val">' + esc(card.feature_id) + '</div></div>' +
+          '<div><div class="acard-fact-lbl">Card</div><div class="acard-fact-val">' + esc(card.card_id) + '</div></div>' +
+        '</div>' +
+        '<div class="acard-actions"><button class="btn btn-ok" disabled title="Interactive signing is wired at Task 7">Sign — wired at T7</button>' +
+        '<span class="f11 ink3">your signing authority is unchanged; only the on-screen click is deferred</span></div>' +
+        '</div>';
+    }).join('');
+  }
+
+  // ── Audit · ledger feed (feed-row idiom) ──
+  function renderFeed(events){
+    const kind = t => /alarm|halt|deny|denied|reject|fail|tamper/i.test(t) ? ['fd-alarm','!']
+      : /verdict|approve|merged|done|sign/i.test(t) ? ['fd-ok','+']
+      : /warn|escalat|divergence|qa\./i.test(t) ? ['fd-warn','▲'] : ['fd-info','·'];
+    const rows = events.slice().reverse().slice(0, 60);
+    $('feed-count').textContent = (events.length) + ' EVENTS';
+    $('audit').innerHTML = rows.length ? rows.map(e => {
+      const [icon, glyph] = kind(e.event_type);
+      return '<div class="feed-row"><div class="feed-icon ' + icon + '">' + glyph + '</div>' +
+        '<div class="feed-body"><span class="feed-kind">#' + e.seq + ' ' + esc(e.event_type) + '</span>' +
+        '<span class="feed-txt">' + esc(e.actor) + (e.feature_id ? ' · ' + esc(e.feature_id) : '') + '</span></div>' +
+        '<span class="feed-time">' + relTime(e.ts) + '</span></div>';
+    }).join('') : '<div class="activity-empty">no events yet</div>';
+  }
+
+  // ── poll loop ──
+  async function refreshAll(){
+    try{
+      const [summary, kb, rooms, cards, feed, costData, findings] = await Promise.all([
+        get('/state/summary'), get('/kanban'), get('/rooms/live'),
+        get('/cards'), get('/audit/feed'), get('/cost'), get('/findings'),
+      ]);
+      failCount = 0;
+      if (!summary.connected){ renderDisconnected(); return; }
+      const cardList = cards.cards || [];
+      renderTrust(summary);
+      renderStats(summary, cardList, costData, findings.checker_findings || []);
+      renderKanban(kb.columns || {});
+      renderRooms(rooms.active || []);
+      renderCost(costData);
+      renderCards(cardList);
+      renderFeed(feed.events || []);
+      live('live · ' + cardList.length + ' pending');
+    } catch(e){
+      failCount++;
+      if (failCount >= 3) renderDisconnected(); else live('reconnecting…');
     }
-    refresh(); setInterval(refresh, 3000);
-  </script>
+  }
+  refreshAll();
+  setInterval(refreshAll, POLL_MS);
+})();
+</script>
 </body>
 </html>
