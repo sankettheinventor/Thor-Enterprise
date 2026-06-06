@@ -1,0 +1,24 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Env / secrets (never commit real secrets — P14.1)
+.env
+*.key
+*.pem
+
+# Read-only study material — present in the tree but NEVER committed or imported (Rule 10).
+_reference/
+docs/thor2 - Copy/
+
+# Identity signing key + smoke-test scratch (local, never committed)
+.thor/
+.smoke/
+
+# OS / editor
+.DS_Store
+Thumbs.db

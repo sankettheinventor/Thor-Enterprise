@@ -1,0 +1,56 @@
+<!doctype html>
+<!--
+  THOR PM Surface — minimal static cockpit (evolves ceo.html). Vanilla JS, no build step.
+  A WINDOW, NOT A BRAIN: it only reads projections from the DashboardAPI (:7080) and writes back
+  direction + signatures. The full React UI (PRD §4) is a deferred presentation layer over this
+  same API. Served statically; point API_BASE at the DashboardAPI.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>THOR — Cockpit</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0f1115; color: #e6e6e6; }
+    header { padding: 12px 18px; background: #161a22; border-bottom: 1px solid #262b36; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 14px; }
+    .panel { background: #161a22; border: 1px solid #262b36; border-radius: 10px; padding: 12px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #8aa0c0; margin: 0 0 8px; }
+    .card { background: #1d2430; border-radius: 8px; padding: 10px; margin: 6px 0; }
+    button { background: #2d6cdf; color: #fff; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+    .disc { color: #ff6b6b; font-weight: 600; }
+    .col { font-size: 12px; color: #9aa7bd; }
+  </style>
+</head>
+<body>
+  <header><strong>THOR Cockpit</strong> — <span id="conn">connecting…</span></header>
+  <div class="grid">
+    <div class="panel"><h2>Kanban — Direct</h2><div id="kanban"></div></div>
+    <div class="panel"><h2>Live rooms — Watch</h2><div id="rooms"></div></div>
+    <div class="panel"><h2>Approval queue — Decide</h2><div id="cards"></div></div>
+    <div class="panel"><h2>Audit feed — Audit</h2><div id="audit"></div></div>
+  </div>
+  <script>
+    const API_BASE = location.origin;  // point at the DashboardAPI (:7080)
+    async function get(p) { const r = await fetch(API_BASE + p); if (!r.ok) throw 0; return r.json(); }
+    async function refresh() {
+      try {
+        const s = await get('/state/summary');
+        if (!s.connected) { document.getElementById('conn').innerHTML = '<span class="disc">DISCONNECTED — data may be out of date (signing disabled)</span>'; return; }
+        document.getElementById('conn').textContent = 'connected';
+        const k = await get('/kanban');
+        document.getElementById('kanban').innerHTML = Object.entries(k.columns)
+          .map(([c, fs]) => `<div class="col"><b>${c}</b>: ${fs.map(f => f.feature_id).join(', ') || '—'}</div>`).join('');
+        const rooms = (await get('/rooms/live')).active;
+        document.getElementById('rooms').innerHTML = rooms.map(r => `<div class="card">${r.feature_id} · ${r.stage} · ${r.status}</div>`).join('') || '—';
+        const cards = (await get('/cards')).cards;
+        document.getElementById('cards').innerHTML = cards.map(c => `<div class="card"><b>${c.type}</b> (${c.feature_id})<br><small>${c.legible_reason}</small><br><button>Sign</button></div>`).join('') || 'no pending decisions';
+        const ev = (await get('/audit/feed')).events.slice(-8).reverse();
+        document.getElementById('audit').innerHTML = ev.map(e => `<div class="col">#${e.seq} ${e.event_type} <small>(${e.actor})</small></div>`).join('');
+      } catch (e) {
+        document.getElementById('conn').innerHTML = '<span class="disc">DISCONNECTED</span>';
+      }
+    }
+    refresh(); setInterval(refresh, 3000);
+  </script>
+</body>
+</html>

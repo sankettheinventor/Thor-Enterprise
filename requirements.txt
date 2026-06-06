@@ -1,0 +1,12 @@
+# THOR control-plane (Python) deps — Module 1 (Wall).
+# Install (inside the WSL venv):  pip install -r requirements.txt
+
+docker>=7.1.0          # Docker SDK — provisioner / lifecycle / mount manager
+cryptography>=42.0.0   # Ed25519 room identity token (Identity Stamper 1.6)
+fastapi>=0.110.0       # Wall provisioning REST API (PRD §6.1)
+uvicorn[standard]>=0.29.0  # ASGI server to run the Wall API
+pydantic>=2.6.0        # request/response models for the API
+psycopg[binary]>=3.2   # Postgres driver — THOR Manager [ThorDB] + EventLog (Module 3)
+
+# dev / test (proving suite is written but NOT gated on — P7 / Rule 2)
+pytest>=8.0.0

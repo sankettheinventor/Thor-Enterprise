@@ -1,0 +1,27 @@
+[project]
+name = "thor-enterprise"
+version = "0.1.0"
+description = "THOR — Governed Agentic Development Platform. Module 1: the Wall."
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Deps are pinned in requirements.txt for the day-one workflow. Mirrored here for tooling.
+dependencies = [
+    "docker>=7.1.0",
+    "cryptography>=42.0.0",
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.29.0",
+    "pydantic>=2.6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The AC suite is DEFERRED proving (P7 / Rule 2): written alongside, run at the end, never gating.
+markers = ["deferred: acceptance proving deferred until THOR is whole — do not gate progress"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -1,0 +1,10 @@
+# THOR local control plane — filled in as modules land.
+# Day one (Module 1 / Wall): no long-running control-plane services yet. Rooms are created
+# directly by the provisioner against the host Docker daemon. The Wall API (PRD §6.1) can be
+# run ad hoc with `uvicorn wall.api:app`. As Modules 2+ land, ThorManager, Scheduler, CTO,
+# GovernanceEngine, Sentinel, SelfAudit, Gitea and the adapters get services here.
+
+# NOTE: rooms (the execution plane) are NOT defined here — they are created on demand and
+# destroyed by the Wall's Lifecycle Controller, one container per task (Bible §5.1).
+
+services: {}
