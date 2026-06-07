@@ -20,6 +20,9 @@ dev = ["pytest>=8.0.0"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # The AC suite is DEFERRED proving (P7 / Rule 2): written alongside, run at the end, never gating.
+# Deselected from the DEFAULT run so `pytest` stays fast + docker-free and does NOT gate progress.
+# Run the real proving pass intentionally with:  pytest -m deferred
+addopts = "-m 'not deferred'"
 markers = ["deferred: acceptance proving deferred until THOR is whole — do not gate progress"]
 
 [tool.ruff]
