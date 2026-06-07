@@ -29,7 +29,7 @@ class PhoneBridge:
 
     def revoke_device(self, device_id: str) -> None:
         self._devices.pop(device_id, None)
-        self.manager.eventlog.append("device.revoked", {"device_id": device_id}, actor="control-plane")
+        self.manager._record("device.revoked", {"device_id": device_id}, actor="control-plane")
 
     # ---- control plane -> phone (push, ciphertext) ----
     def push_card(self, card: dict, device_id: str) -> None:
@@ -48,8 +48,8 @@ class PhoneBridge:
 
         cmd = msg.get("command")
         if not allowlist.allowed(cmd):                              # FR-4 / AC-4 / AC-11
-            self.manager.eventlog.append("security.rejected",
-                                         {"command": cmd, "reason": "not allowlisted"}, actor="phone")
+            self.manager._record("security.rejected",
+                                 {"command": cmd, "reason": "not allowlisted"}, actor="phone")
             return {"status": "rejected", "reason": f"command {cmd!r} is not allowlisted"}
 
         device = self._devices.get(msg.get("device_id"))

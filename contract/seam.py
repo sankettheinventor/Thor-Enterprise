@@ -46,7 +46,7 @@ class Seam:
     # ---- audit: every seam message is an event (FR-15 / AC-11) ----
     def _record(self, msg_type: str, payload: dict) -> None:
         if self.manager is not None:
-            self.manager.eventlog.append(f"contract.{msg_type}", payload, actor="contract")
+            self.manager._record(f"contract.{msg_type}", payload, actor="contract")
 
     # ---- version negotiation at provision (FR-11 / AC-9) ----
     def negotiate_version(self, provided: str) -> bool:

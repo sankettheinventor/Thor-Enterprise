@@ -21,8 +21,11 @@ class EscalationRouter:
 
     def hold(self, action: dict, verdict: Verdict) -> dict:
         """Record the escalation and hold the action pending a human decision."""
-        self.recorder.eventlog.append(
-            "card.raised",
+        # H7: record THROUGH the Manager (single ledger). Event type is `action.escalated` — NOT
+        # `card.raised`: the authoritative CEO card (with card_id) is raised by Manager.raise_card in
+        # the live flow; this is the Leash's audit record of holding the action (no projection row).
+        self.recorder.record_event(
+            "action.escalated",
             {
                 "room_id": action.get("room_id"),
                 "action": {"name": action.get("name"), "target": action.get("target")},
@@ -30,6 +33,7 @@ class EscalationRouter:
                 "classification": verdict.classification,
                 "status": "held",
             },
+            room_id=action.get("room_id"),
         )
         entry = {"action": action, "reason": verdict.reason, "status": "held"}
         self.held.append(entry)

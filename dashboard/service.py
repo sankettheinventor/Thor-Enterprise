@@ -88,7 +88,7 @@ class DashboardService:
 
     # ---- writes: direction + signatures only (each recorded as an operator action, FR-15) ----
     def _action(self, action: str, detail: dict) -> None:
-        self.manager.eventlog.append("dashboard.action", {"action": action, **detail}, actor="operator")
+        self.manager._record("dashboard.action", {"action": action, **detail}, actor="operator")
 
     def add_feature(self, title: str, context: str = "", priority: int = 3, est_tokens: int = 1000) -> str:
         fid = "F" + uuid.uuid4().hex[:4].upper()
@@ -110,7 +110,7 @@ class DashboardService:
             card = self.manager._get_card(card_id)
             if card and card["type"] == "merge":
                 fid = card["feature_id"]
-                self.manager.eventlog.append("feature.merged", {"feature_id": fid}, feature_id=fid)
+                self.manager._record("feature.merged", {"feature_id": fid}, feature_id=fid)
                 self.manager.set_feature_status(fid, "done")
         return result
 
