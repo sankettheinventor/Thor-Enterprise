@@ -25,6 +25,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from adapters import agt_adapter
+from leash.decision import DecisionRecorder
 from leash.policy import FrozenPolicy
 from leash.proxy import InRoomProxy
 from manager import db, pg
@@ -81,7 +82,7 @@ def main() -> int:
         if wt.exists():
             shutil.rmtree(wt)
         (wt / "src").mkdir(parents=True)
-        proxy = InRoomProxy(agt_adapter, mgr, str(wt))   # the Manager IS the recorder
+        proxy = InRoomProxy(agt_adapter, DecisionRecorder(mgr), str(wt))   # leash recorder sinks through Manager (H7)
         proxy.handle_tool_call({"name": "write_file", "room_id": room_a["room_id"],
                                 "args": {"path": "src/ok.js", "content": "// ok"}})
         proxy.handle_tool_call({"name": "write_file", "room_id": room_a["room_id"],

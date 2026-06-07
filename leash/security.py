@@ -48,8 +48,9 @@ def enforce(tool_definition: dict, room_id: str, lifecycle, recorder=None) -> di
     if result.safe:
         return {"room_id": room_id, "action": "allow", "findings": []}
     if recorder is not None:
-        recorder.eventlog.append(
-            "sentinel.kill", {"room_id": room_id, "reason": "malicious tool", "findings": result.findings}
+        recorder.record_event(   # H7: through the Manager (single ledger), not a local chain
+            "sentinel.kill", {"room_id": room_id, "reason": "malicious tool", "findings": result.findings},
+            room_id=room_id,
         )
     lifecycle.destroy(room_id)  # max-severity: terminate, quarantine (PRD §8.5)
     return {"room_id": room_id, "action": "killed", "findings": result.findings}

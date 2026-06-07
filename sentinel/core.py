@@ -92,7 +92,7 @@ class Sentinel:
         self.halts.append(rec)
         if self.manager is not None:
             try:
-                self.manager.eventlog.append("sentinel.halt", rec, actor="sentinel")
+                self.manager._record("sentinel.halt", rec, actor="sentinel")
             except Exception:  # noqa: BLE001
                 pass
         return rec
@@ -107,7 +107,7 @@ class Sentinel:
         self.alarms.append(rec)
         if self.manager is not None:
             try:
-                self.manager.eventlog.append("sentinel.alarm", rec, actor="sentinel")
+                self.manager._record("sentinel.alarm", rec, actor="sentinel")
             except Exception:  # noqa: BLE001
                 pass
         return rec

@@ -132,7 +132,12 @@ def boot() -> list[tuple[object, int]]:
 
     # ---- 3) Room Mechanism — the Manager: the hands + the SOLE ledger writer (decides nothing) ----
     manager = ThorManager(conn)
-    print("[thor] Manager   room mechanism up — sole EventLog writer (decides nothing)")
+    # M1: crash-replay has a REAL caller now. On every boot the Manager rebuilds its projections
+    # (rooms/cards/features) purely by replaying the durable signed EventLog — so a crash that lost
+    # the projection tables (but kept the ledger) recovers to exact state. (FR-13 / AC-3.)
+    manager.rebuild_from_log()
+    print(f"[thor] Manager   room mechanism up — sole EventLog writer (decides nothing); "
+          f"replayed {manager.eventlog.count()} events on boot")
 
     # ---- 4) PM — the plan: the catalog lives in the ledger; the SDLC stage library is available ----
     print("[thor] PM        plan ready — feature catalog (in ledger) + SDLC stage library")

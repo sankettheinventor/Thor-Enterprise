@@ -1,101 +1,35 @@
 """
-Sub-module 2.7 — Decision Recorder + the signed, hash-chained EventLog.
+Sub-module 2.7 — Decision Recorder.
 
 Every allow/deny/escalate becomes a first-class, signed, append-only event (FR-11, AC-3).
-This is the audit trail: altering any past entry breaks the hash chain visibly.
+This is the audit trail.
 
-⚠️ This is a LOCAL stub for ThorManager's EventLog (Module 3). The PRD has the Leash POST
-decisions to ThorManager `:7100 /events/append`; until M3 exists we append to a local JSONL
-file, signed with the same Ed25519 instance key (wall.identity_stamper). At M3 the recorder's
-sink swaps from "local file" to "ThorManager" — the signing + chaining stay identical.
+H7 (T2): the recorder now sinks THROUGH the ThorManager (Module 3) — the SOLE EventLog writer —
+instead of its own local `.thor/eventlog.jsonl` chain. There is ONE ledger. The signing + hash-
+chaining live in the Manager's EventLogWriter; routing here goes via `Manager.record_decision`
+(for decisions) and `Manager._record` (for the Leash's other governed records: escalation holds,
+kill-switch events). The old local `EventLog` class is retired (the second ledger is gone).
 """
 from __future__ import annotations
 
-import hashlib
-import json
-import os
-import time
 import uuid
-
-from wall.identity_stamper import IdentityStamper
 
 from .policy import Verdict
 
-GENESIS = "GENESIS"
-
-
-def _canonical(body: dict) -> bytes:
-    return json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
-
-
-class EventLog:
-    """Append-only, signed, hash-chained event stream (the audit trail / replay source)."""
-
-    def __init__(self, path: str = ".thor/eventlog.jsonl", stamper: IdentityStamper | None = None) -> None:
-        self.path = path
-        self.stamper = stamper or IdentityStamper()
-        os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-
-    def _records(self) -> list[dict]:
-        if not os.path.exists(self.path):
-            return []
-        with open(self.path) as f:
-            return [json.loads(line) for line in f if line.strip()]
-
-    def append(self, event_type: str, payload: dict, actor: str = "leash") -> dict:
-        records = self._records()
-        prev_hash = records[-1]["hash"] if records else GENESIS
-        body = {
-            "seq": len(records),
-            "prev_hash": prev_hash,
-            "timestamp": time.time(),
-            "actor": actor,
-            "event_type": event_type,
-            "payload": payload,
-        }
-        digest = hashlib.sha256(_canonical(body)).hexdigest()
-        signature = self.stamper.sign_blob(digest.encode())
-        record = {**body, "hash": digest, "signature": signature}
-        with open(self.path, "a") as f:
-            f.write(json.dumps(record) + "\n")
-        return record
-
-    def verify_chain(self) -> bool:
-        """Recompute every hash, every signature, and every prev-link. True iff intact."""
-        prev = GENESIS
-        for rec in self._records():
-            body = {k: rec[k] for k in ("seq", "prev_hash", "timestamp", "actor", "event_type", "payload")}
-            digest = hashlib.sha256(_canonical(body)).hexdigest()
-            if digest != rec["hash"]:
-                return False
-            if rec["prev_hash"] != prev:
-                return False
-            if not self.stamper.verify_blob(digest.encode(), rec["signature"]):
-                return False
-            prev = rec["hash"]
-        return True
-
-    def count(self) -> int:
-        return len(self._records())
-
 
 class DecisionRecorder:
-    """Thin recorder: turns a Verdict on an action into a signed `action.decided` event."""
+    """Turns a Verdict on an action into a signed `action.decided` event, recorded THROUGH the
+    Manager (the single ledger). Also the Leash's record path for its other governed events."""
 
-    def __init__(self, eventlog: EventLog) -> None:
-        self.eventlog = eventlog
+    def __init__(self, manager) -> None:
+        self.manager = manager   # ThorManager — the sole EventLog writer (H7)
 
     def record_decision(self, verdict: Verdict, action: dict) -> dict:
-        decision_id = uuid.uuid4().hex
-        return self.eventlog.append(
-            "action.decided",
-            {
-                "decision_id": decision_id,
-                "room_id": action.get("room_id"),
-                "action": {"type": action.get("type"), "name": action.get("name"),
-                           "target": action.get("target")},
-                "decision": verdict.decision,
-                "reason": verdict.reason,
-                "classification": verdict.classification,
-            },
-        )
+        # Preserve the Leash decision_id (the Manager carries it through record_decision now).
+        decision_id = action.get("decision_id") or uuid.uuid4().hex
+        return self.manager.record_decision(verdict, {**action, "decision_id": decision_id})
+
+    def record_event(self, event_type: str, payload: dict, **kw) -> dict:
+        """Record any other governed Leash event through the Manager (actor=leash). Routes through
+        `_record` so it hits the fail-closed gate + projection — never the raw eventlog."""
+        return self.manager._record(event_type, payload, actor="leash", **kw)

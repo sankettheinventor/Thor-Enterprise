@@ -28,9 +28,11 @@ sys.path.insert(0, str(REPO))
 os.chdir(REPO)
 
 from adapters import agt_adapter
-from leash.decision import DecisionRecorder, EventLog
+from leash.decision import DecisionRecorder
 from leash.policy import FrozenPolicy, Verdict
 from leash.proxy import InRoomProxy
+from manager import db
+from manager.core import ThorManager
 
 ROOM = "room-leash-demo"
 
@@ -69,11 +71,11 @@ def main() -> int:
     print(f"policy loaded: hash={policy.policy_hash[:12]} scope={policy.scope_files} "
           f"forbidden={policy.forbidden_patterns}")
 
-    # Fresh signed EventLog for this demo.
-    log_path = str(REPO / ".thor" / "leash-eventlog.jsonl")
-    if os.path.exists(log_path):
-        os.remove(log_path)
-    recorder = DecisionRecorder(EventLog(log_path))
+    # H7: the recorder records THROUGH the Manager (the single signed ledger), not a local file.
+    conn = db.connect()
+    db.init_schema(conn)
+    manager = ThorManager(conn)
+    recorder = DecisionRecorder(manager)
     proxy = InRoomProxy(agt_adapter, recorder, worktree)
 
     def cook_writes(path, content):
@@ -114,9 +116,9 @@ def main() -> int:
     results["AC-4 fail-closed when governor down"] = ac4
     print(f"   {downres}  file_written={exists(worktree, 'src/should_not_write.js')}")
 
-    print("== AC-3 — decisions are signed, hash-chained events (verify by re-reading) ==")
-    chain_ok = recorder.eventlog.verify_chain()
-    n_events = recorder.eventlog.count()
+    print("== AC-3 — decisions are signed, hash-chained events in the Manager ledger (H7) ==")
+    chain_ok = recorder.manager.eventlog.verify_chain()
+    n_events = recorder.manager.eventlog.count()
     # 4 governed actions above (allow, deny, escalate, down) -> at least 4 decided events
     ac3 = chain_ok and n_events >= 4
     results["AC-3 signed hash-chained decision log"] = ac3

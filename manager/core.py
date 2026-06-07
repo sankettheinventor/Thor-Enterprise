@@ -63,7 +63,8 @@ class ThorManager:
     def record_decision(self, verdict, action: dict) -> dict:
         return self._record(
             "action.decided",
-            {"room_id": action.get("room_id"),
+            {"decision_id": action.get("decision_id"),   # H7: preserve the Leash's decision_id
+             "room_id": action.get("room_id"),
              "action": {"type": action.get("type"), "name": action.get("name"),
                         "target": action.get("target")},
              "decision": verdict.decision, "reason": verdict.reason,

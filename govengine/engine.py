@@ -87,12 +87,12 @@ class GovernanceEngine:
     def _record(self, ctx, result) -> None:           # AC-11 — verdict + divergence are signed events
         if ctx.manager is None:
             return
-        ctx.manager.eventlog.append("verdict.computed", {
+        ctx.manager._record("verdict.computed", {
             "feature_id": result["feature_id"], "verdict": result["verdict"],
             "blockers": result["blockers"], "deterministic_hash": result["deterministic_hash"]},
             actor="govengine", feature_id=ctx.feature_id)
         if result["divergence"]["found"]:
-            ctx.manager.eventlog.append("divergence.detected", {
+            ctx.manager._record("divergence.detected", {
                 "feature_id": result["feature_id"], "signals": result["divergence"]["signals"]},
                 actor="govengine", feature_id=ctx.feature_id)
 
