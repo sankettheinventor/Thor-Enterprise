@@ -115,19 +115,33 @@ class DashboardService:
         self.manager.set_feature_status(feature_id, "ready")
         self._action("mark_ready", {"feature_id": feature_id})
 
-    def approve(self, card_id: str, signature_b64: str, signer_pub_b64: str) -> dict:
+    def approve(self, card_id: str, signature_b64: str, signer_pub_b64: str,
+                nonce: str | None = None) -> dict:
         if not self.connected():
             return {"verified": False, "reason": "disconnected — cannot sign against a stale picture"}
-        result = self.manager.approve(card_id, signature_b64, signer_pub_b64)
+        result = self.manager.approve(card_id, signature_b64, signer_pub_b64, nonce=nonce)
         self._action("approve", {"card_id": card_id, "verified": result["verified"]})
         if result["verified"]:
-            # a verified merge-card signature drives the real merge (Signature 3 → merge).
             card = self.manager._get_card(card_id)
-            if card and card["type"] == "merge":
-                fid = card["feature_id"]
-                self.manager._record("feature.merged", {"feature_id": fid}, feature_id=fid)
-                self.manager.set_feature_status(fid, "done")
+            if card and card["type"] == "merge":   # a verified Signature 3 drives the REAL merge (T6)
+                result["merge"] = self._drive_merge(card)
         return result
+
+    def _drive_merge(self, card: dict) -> dict:
+        """Signature 3 verified → the real merge via T6's direct_merge, but ONLY if the verdict is
+        still FRESH (R9 — the branch HEAD hasn't moved since the verdict). Else refuse, card stays done."""
+        p = card.get("payload", {})
+        repo, branch, snap = p.get("repo"), p.get("branch"), p.get("snapshot_sha")
+        if not (repo and branch):
+            return {"merged": False, "reason": "merge card has no repo/branch context"}
+        from govengine import reality
+        try:
+            fresh = snap is None or reality.head_sha(repo, branch) == snap
+        except reality.RealityError:
+            fresh = False
+        if not fresh:
+            return {"merged": False, "reason": "verdict stale (branch moved) — re-run before merge (R9)"}
+        return self.manager.direct_merge(repo, branch, card["feature_id"], signature_ref=card["card_id"])
 
     def reject(self, card_id: str, signature_b64: str, signer_pub_b64: str, reason: str = "") -> dict:
         if not self.connected():

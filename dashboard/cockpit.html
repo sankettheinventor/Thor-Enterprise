@@ -31,7 +31,7 @@
     <div><span class="logo-text">THOR</span><span class="logo-sub">Cockpit · PM Surface</span></div></div>
   <div class="topbar-spacer"></div>
   <div class="topbar-right">
-    <span class="chip c-neutral" title="Interactive signing is wired at Task 7">read-only · sign at T7</span>
+    <span class="chip c-ok" title="Ed25519 signing — your key, signed in your browser">sign enabled</span>
     <div class="live-pill" style="display:flex"><span class="np-live"></span> <span id="live-text">connecting…</span></div>
   </div>
 </header>
@@ -208,8 +208,8 @@
           '<div><div class="acard-fact-lbl">Feature</div><div class="acard-fact-val">' + esc(card.feature_id) + '</div></div>' +
           '<div><div class="acard-fact-lbl">Card</div><div class="acard-fact-val">' + esc(card.card_id) + '</div></div>' +
         '</div>' +
-        '<div class="acard-actions"><button class="btn btn-ok" disabled title="Interactive signing is wired at Task 7">Sign — wired at T7</button>' +
-        '<span class="f11 ink3">your signing authority is unchanged; only the on-screen click is deferred</span></div>' +
+        '<div class="acard-actions"><button class="btn btn-ok" onclick="thorSign(\'' + esc(card.card_id) + '\')">Sign</button>' +
+        '<span class="f11 ink3">Ed25519 — signed in your browser with your key (it never leaves this device)</span></div>' +
         '</div>';
     }).join('');
   }
@@ -256,7 +256,47 @@
   }
   refreshAll();
   setInterval(refreshAll, POLL_MS);
+  window.refreshAll = refreshAll;   // exposed so the Sign module can refresh after a signature
 })();
+</script>
+
+<!-- T7 — the human-signs authority: the operator's Ed25519 key lives in THIS browser and signs the
+     card material locally (@noble/ed25519). The key never leaves the device. The control plane only
+     ever sees a signature it verifies against the registered operator key + a one-time nonce. -->
+<script type="module">
+  import * as ed from 'https://esm.sh/@noble/ed25519@2.1.0';
+  import { sha512 } from 'https://esm.sh/@noble/hashes@1.4.0/sha512';
+  ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));   // ed25519 needs sha512
+
+  const b64url = b => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  function operatorKey() {
+    let hex = localStorage.getItem('thor_op_key');
+    if (!hex) {
+      hex = [...ed.utils.randomPrivateKey()].map(x => x.toString(16).padStart(2, '0')).join('');
+      localStorage.setItem('thor_op_key', hex);   // generated once; in prod this is the CEO's provisioned key
+    }
+    return Uint8Array.from(hex.match(/../g).map(h => parseInt(h, 16)));
+  }
+  async function registered() {
+    const priv = operatorKey();
+    const pub = b64url(ed.getPublicKey(priv));
+    await fetch(location.origin + '/operator/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ signer_pub: pub }) });
+    return { priv, pub };
+  }
+  window.thorSign = async function (cardId) {
+    try {
+      const { priv, pub } = await registered();
+      const ch = await (await fetch(location.origin + '/cards/' + cardId + '/challenge', { cache: 'no-store' })).json();
+      if (ch.error) { alert('Cannot sign: ' + ch.error); return; }
+      const sig = b64url(ed.sign(new TextEncoder().encode(ch.material), priv));   // signed locally with YOUR key
+      const r = await (await fetch(location.origin + '/approve', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ card_id: cardId, signature: sig, signer_pub: pub, nonce: ch.nonce }) })).json();
+      if (r.verified) { if (window.refreshAll) window.refreshAll(); }
+      else alert('Signature rejected: ' + (r.reason || 'unknown'));
+    } catch (e) { alert('Signing failed: ' + e.message); }
+  };
 </script>
 </body>
 </html>

@@ -26,9 +26,12 @@ class PhoneBridge:
     # ---- device registry + revocation (AC-9) ----
     def register_device(self, device_id: str, e2ee_pub: str, signing_pub: str) -> None:
         self._devices[device_id] = {"e2ee_pub": e2ee_pub, "signing_pub": signing_pub}
+        self.manager.register_operator(signing_pub)   # T7: a trusted device key may sign
 
     def revoke_device(self, device_id: str) -> None:
-        self._devices.pop(device_id, None)
+        dev = self._devices.pop(device_id, None)
+        if dev:
+            self.manager.authorized_signers.discard(dev["signing_pub"])   # revoked key can no longer sign
         self.manager._record("device.revoked", {"device_id": device_id}, actor="control-plane")
 
     # ---- control plane -> phone (push, ciphertext) ----

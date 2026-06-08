@@ -17,10 +17,13 @@ class MergeDriver:
         self.bridge = FindingsTicketBridge(manager)
         self.engine = engine          # GovernanceEngine — for the R9 freshness check before merge
 
-    def on_verdict(self, verdict_result: dict) -> str | None:
-        """A live verdict drives the card: `done` → a merge card (Signature 3 pending). Returns its id."""
+    def on_verdict(self, verdict_result: dict, repo: str | None = None) -> str | None:
+        """A live verdict drives the card: `done` → a merge card (Signature 3 pending). Carries
+        repo/branch/snapshot so the dashboard Sign can run the real, fresh merge. Returns its id."""
         if verdict_result.get("verdict") == "done":
-            return self.bridge.raise_merge_card(verdict_result["feature_id"])
+            return self.bridge.raise_merge_card(verdict_result["feature_id"], repo,
+                                                verdict_result.get("branch"),
+                                                verdict_result.get("snapshot_sha"))
         return None   # not_done/escalate are handled by the qa-fail / escalation paths
 
     def merge_if_authorized(self, card_id: str, repo: str, branch: str,

@@ -29,7 +29,12 @@ class Sig(BaseModel):
     card_id: str
     signature: str
     signer_pub: str
+    nonce: str | None = None   # T7: the one-time challenge bound to the card (replay defence)
     reason: str = ""
+
+
+class OperatorKey(BaseModel):
+    signer_pub: str
 
 
 @app.get("/state/summary")
@@ -87,9 +92,28 @@ def add_feature(f: FeatureIn):
     return {"feature_id": _service.add_feature(f.title, f.context, f.priority)}
 
 
+@app.post("/operator/register")
+def register_operator(k: OperatorKey):
+    """Register an authorized signer (the CEO's operator key) — only registered keys may sign."""
+    _service.manager.register_operator(k.signer_pub)
+    return {"registered": True}
+
+
+@app.get("/cards/{card_id}/challenge")
+def challenge(card_id: str):
+    """Issue a one-time nonce + the EXACT material to sign (card-id|payload-hash|nonce), so the cockpit
+    signs the precise string the Manager will verify. The nonce is consumed on use → replay-proof."""
+    card = _service.manager._get_card(card_id)
+    if not card:
+        return {"error": "unknown card"}
+    nonce = _service.manager.issue_challenge(card_id)
+    return {"card_id": card_id, "nonce": nonce,
+            "material": _service.manager.card_material(card_id, card["payload"], nonce)}
+
+
 @app.post("/approve")
 def approve(s: Sig):
-    return _service.approve(s.card_id, s.signature, s.signer_pub)
+    return _service.approve(s.card_id, s.signature, s.signer_pub, s.nonce)
 
 
 @app.post("/reject")
