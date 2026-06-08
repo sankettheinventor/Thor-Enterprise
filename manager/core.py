@@ -360,5 +360,14 @@ class ThorManager:
         return {"status": "rejected_dishonesty", "room_id": container, "signals": signals,
                 "message": message}
 
-    def direct_merge(self, branch: str, signature_ref: str) -> dict:  # pragma: no cover - M12 stub
-        raise NotImplementedError("Gitea Director performs the real merge — arrives with Module 12")
+    def direct_merge(self, repo: str, branch: str, feature_id: str, signature_ref: str) -> dict:
+        """Execute the merge through the Gitea adapter — THOR decides, Gitea executes (S9). The adapter
+        refuses without a Signature-3 ref; on success record feature.merged + flip the feature to done."""
+        from adapters import gitea_adapter
+        pr = gitea_adapter.open_pr(repo, branch, {"feature_id": feature_id})
+        res = gitea_adapter.merge(repo, pr["pr_id"], signature_ref)
+        if res.get("merged"):
+            self._record("feature.merged", {"feature_id": feature_id, "branch": branch,
+                         "sha": res.get("sha")}, feature_id=feature_id)
+            self.set_feature_status(feature_id, "done")
+        return res
