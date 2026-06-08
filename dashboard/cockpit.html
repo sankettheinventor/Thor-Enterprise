@@ -51,6 +51,7 @@
     <div class="status-card"><div class="top"><span class="label">Decisions waiting</span></div><div class="stat" id="st-pending">0</div><div class="sublabel" id="st-pending-sub">nothing waiting</div></div>
     <div class="status-card"><div class="top"><span class="label">Governance</span></div><div class="stat" id="st-gov">—</div><div class="sublabel" id="st-gov-sub">sentinel + self-audit</div></div>
     <div class="status-card"><div class="top"><span class="label">System meta-trust</span></div><div class="stat" id="st-trust">—</div><div class="sublabel">system reliability</div></div>
+    <div class="status-card"><div class="top"><span class="label">Lies caught</span></div><div class="stat" id="st-lies">0</div><div class="sublabel" id="st-lies-sub">honesty enforced</div></div>
     <div class="status-card"><div class="top"><span class="label">Token spend</span></div><div class="stat" id="st-spend">0</div><div class="sublabel" id="st-spend-sub">of cap</div></div>
   </div>
 
@@ -138,6 +139,16 @@
     $('st-spend-sub').textContent = costData.cap ? 'of ' + costData.cap.toLocaleString() + (costData.alert ? ' · ALERT' : '') : 'no cap set';
   }
 
+  // ── honesty meter: lies caught in containers (the moat made visible) ──
+  function renderLies(lies){
+    const total = lies.total || 0;
+    const el = $('st-lies'); el.textContent = total;
+    el.className = 'stat ' + (total > 0 ? 'bad' : 'ok');
+    const containers = Object.keys(lies.by_container || {});
+    $('st-lies-sub').textContent = total === 0 ? 'honesty enforced'
+      : total + ' lie' + (total > 1 ? 's' : '') + ' caught in ' + containers.length + ' container' + (containers.length > 1 ? 's' : '');
+  }
+
   // ── Direct · kanban (kb-* idiom) ──
   const COL = [['backlog','queued','Backlog'],['ready','queued','Ready'],['building','building','Building'],
                ['in_qa','planning','In QA'],['awaiting_signature','planning','Awaiting sig'],['done','done','Done']];
@@ -222,15 +233,16 @@
   // ── poll loop ──
   async function refreshAll(){
     try{
-      const [summary, kb, rooms, cards, feed, costData, findings] = await Promise.all([
+      const [summary, kb, rooms, cards, feed, costData, findings, lies] = await Promise.all([
         get('/state/summary'), get('/kanban'), get('/rooms/live'),
-        get('/cards'), get('/audit/feed'), get('/cost'), get('/findings'),
+        get('/cards'), get('/audit/feed'), get('/cost'), get('/findings'), get('/lies'),
       ]);
       failCount = 0;
       if (!summary.connected){ renderDisconnected(); return; }
       const cardList = cards.cards || [];
       renderTrust(summary);
       renderStats(summary, cardList, costData, findings.checker_findings || []);
+      renderLies(lies || {total:0, by_container:{}});
       renderKanban(kb.columns || {});
       renderRooms(rooms.active || []);
       renderCost(costData);

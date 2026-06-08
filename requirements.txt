@@ -8,5 +8,7 @@ uvicorn[standard]>=0.29.0  # ASGI server to run the Wall API
 pydantic>=2.6.0        # request/response models for the API
 psycopg[binary]>=3.2   # Postgres driver — THOR Manager [ThorDB] + EventLog (Module 3)
 
+coverage>=7.0          # coverage-of-diff for the fake-test detector (GovEngine M1 / H1)
+
 # dev / test (proving suite is written but NOT gated on — P7 / Rule 2)
 pytest>=8.0.0

@@ -82,6 +82,21 @@ class DashboardService:
     def findings(self) -> list[dict]:
         return self.manager.list_checker_findings()
 
+    def lies_caught(self) -> dict:
+        """The cockpit's honesty meter: every caught lie (dishonesty.caught), grouped by container."""
+        import json
+        by_container: dict[str, int] = {}
+        recent: list[dict] = []
+        for e in self.manager.eventlog.all_events():
+            if e["event_type"] == "dishonesty.caught":
+                p = json.loads(e["payload"])
+                c = p.get("container") or p.get("room_id") or "unknown"
+                by_container[c] = by_container.get(c, 0) + 1
+                recent.append({"container": c, "feature_id": p.get("feature_id"),
+                               "signals": p.get("signals", [])})
+        return {"total": sum(by_container.values()), "by_container": by_container,
+                "recent": recent[-10:]}
+
     def health_system(self) -> dict:
         # Sentinel (M10) + Self-Audit meta-trust (M11) are stubbed until those modules land.
         return {"sentinel": {"alive": True, "fail_closed": True}, "self_audit_meta_trust": 0.97}
