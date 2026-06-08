@@ -147,6 +147,7 @@ def boot() -> list[tuple[object, int]]:
 
     # ---- 6) Sentinel — meta-governance / health (peer; real halt wired at T8) ----
     sentinel = Sentinel(manager)
+    manager.attach_sentinel(sentinel)   # T5: a caught lie escalates to meta-governance
     print("[thor] Sentinel  meta-governance up (real halt wired at T8)")
 
     # ---- 7) Self-Audit — the read-only correctness eyes (peer; real model wired at T9) ----

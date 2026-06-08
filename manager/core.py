@@ -40,6 +40,11 @@ class ThorManager:
         self.stamper = stamper or IdentityStamper()
         self.eventlog = EventLogWriter(conn, self.stamper)
         self._eventlog_writable = True   # toggled to demonstrate fail-closed (AC-7)
+        self.sentinel = None             # attached at boot; the Coordinator escalates caught lies to it
+
+    def attach_sentinel(self, sentinel) -> None:
+        """Wire the Sentinel so a caught lie (divergence) escalates to meta-governance (T5)."""
+        self.sentinel = sentinel
 
     # ---- single-writer record path (FR-2) + fail-closed (FR-15) ----
     def set_eventlog_writable(self, ok: bool) -> None:
@@ -247,8 +252,113 @@ class ThorManager:
                 "eventlog_writable": self._eventlog_writable and db_ok, "deps": {"postgres": db_ok}}
 
     # ---- 3.6 / 3.7 delegated coordinators (stubs pending M6 / M12) ----
-    def run_verdict(self, feature_id: str, branch: str) -> dict:  # pragma: no cover - M6 stub
-        raise NotImplementedError("Verdict Coordinator drives the GovernanceEngine — arrives with Module 6")
+    def run_verdict(self, feature_id: str, branch: str, repo: str) -> dict:
+        """
+        C4 — the HONEST Verdict Coordinator. Derives claim / contract / commit_window from TRUSTED
+        state — the recorded assign_task slice (PM/Contract), the ledger window, the Leash decision
+        records — NEVER from the actor. Then drives the (unchanged) GovernanceEngine. On a caught lie
+        (divergence) it runs the dishonesty loop: record the incident, escalate to the Sentinel, and
+        return a legible 'you avoided/misreported X' message for the cook. The moat gets harder.
+        """
+        from govengine import reality, skill_verifier
+        from govengine.engine import GovernanceEngine, VerdictContext
+
+        events = self.eventlog.all_events()
+        room_id = self._room_for_feature(feature_id, events)
+        window = self._trusted_window(feature_id, events)
+        contract = self._trusted_contract(feature_id, events)
+        claim = self._trusted_claim(feature_id, room_id, window, events)
+
+        # H2: real per-skill verdicts from artifacts — R1 is computed, never defaulted True.
+        try:
+            changed = reality.changed_files(repo, branch, "main")
+        except reality.RealityError:
+            changed = set()
+        test_files = [f for f in (contract.get("test_file"), contract.get("regression_file")) if f]
+        skill_ok, skill_results = skill_verifier.verify(repo, changed, test_files)
+
+        ctx = VerdictContext(feature_id, branch, repo, contract=contract, claim=claim, manager=self,
+                             commit_window=window, skill_results_ok=skill_ok)
+        result = GovernanceEngine(self).run_verdict(ctx)
+        result["room_id"] = room_id
+        result["skill_results"] = skill_results
+
+        if result["divergence"]["found"]:                      # a lie/avoidance was caught
+            result["cook_feedback"] = self._dishonesty_loop(feature_id, room_id, result["divergence"]["signals"])
+        return result
+
+    # ---- trusted-state derivations for the Coordinator (the actor supplies NONE of these) ----
+    def _room_for_feature(self, feature_id: str, events: list[dict]) -> str | None:
+        rid = None
+        for e in events:
+            if e["event_type"] == "room.provisioned" and e.get("feature_id") == feature_id:
+                rid = json.loads(e["payload"]).get("room_id")
+        return rid
+
+    def _trusted_window(self, feature_id: str, events: list[dict]) -> tuple[int, int]:
+        seqs = [e["seq"] for e in events if e.get("feature_id") == feature_id]
+        lo = min(seqs) if seqs else 0
+        hi = max(e["seq"] for e in events) if events else 0
+        return (lo, hi)
+
+    def _trusted_contract(self, feature_id: str, events: list[dict]) -> dict:
+        """Read the spec from the recorded assign_task slice (trusted) — never an actor-curated scope."""
+        slice_ = None
+        for e in events:
+            if e["event_type"] == "contract.assign_task":
+                fs = json.loads(e["payload"]).get("feature_slice", {})
+                if fs.get("feature_id") == feature_id:
+                    slice_ = fs
+        if not slice_:
+            return {"scope": {"files": []}, "contracts": [], "test_file": None, "regression_file": None}
+        cdict = slice_.get("contract", {})
+        open_bugs = [b for b in self.list_bugs(feature_id) if b["status"] == "open"]
+        contracts = [{"name": a, "status": "open" if open_bugs else "done"}
+                     for a in cdict.get("acceptance_criteria", [])]
+        return {"scope": slice_.get("scope", {"files": []}), "contracts": contracts,
+                "test_file": cdict.get("test_file"), "regression_file": cdict.get("regression_file"),
+                "protected_files": []}
+
+    def _trusted_claim(self, feature_id: str, room_id: str | None,
+                       window: tuple[int, int], events: list[dict]) -> dict:
+        """Reconstruct the agent's effective claim from TRUSTED records (Option A): files_touched =
+        the Leash's recorded allowed writes; tests_passed = a claim_done knock exists. The actor can
+        never hand over a blank/curated claim to disable the lie-detector."""
+        lo, hi = window
+        files_touched, knocked = [], False
+        for e in events:
+            if not (lo <= e["seq"] <= hi):
+                continue
+            if e["event_type"] == "action.decided":
+                p = json.loads(e["payload"])
+                if p.get("decision") == "allow" and (room_id is None or p.get("room_id") == room_id):
+                    tgt = (p.get("action") or {}).get("target")
+                    if tgt:
+                        files_touched.append(tgt)
+            elif e["event_type"] == "contract.claim_done":
+                if json.loads(e["payload"]).get("feature_id") == feature_id:
+                    knocked = True
+        return {"files_touched": sorted(set(files_touched)), "tests_passed": knocked}
+
+    def _dishonesty_loop(self, feature_id: str, room_id: str | None, signals: list[str]) -> dict:
+        """A caught lie: record the incident (CEO cockpit shows it), escalate to the Sentinel, and
+        tell the cook exactly what was avoided/misreported (the correction loop)."""
+        container = room_id or "unknown"
+        self._record("dishonesty.caught",
+                     {"feature_id": feature_id, "room_id": container, "container": container,
+                      "signals": signals, "count": 1}, actor="govengine",
+                     room_id=room_id, feature_id=feature_id)
+        if self.sentinel is not None:                          # → Sentinel (meta-governance)
+            self.sentinel.receive_urgent(
+                {"detail": f"dishonesty caught in {container}: {'; '.join(signals)}",
+                 "scope": f"room:{container}", "room_id": container,
+                 "confirmed_critical": False, "source": "govengine"})
+        message = ("BLOCKED — your claim does not match reality. This was avoided or misreported: "
+                   + "; ".join(signals) + ". Fix it honestly and resubmit — this is on the record.")
+        self._record("cook.feedback", {"feature_id": feature_id, "room_id": container,
+                     "message": message}, actor="govengine", room_id=room_id, feature_id=feature_id)
+        return {"status": "rejected_dishonesty", "room_id": container, "signals": signals,
+                "message": message}
 
     def direct_merge(self, branch: str, signature_ref: str) -> dict:  # pragma: no cover - M12 stub
         raise NotImplementedError("Gitea Director performs the real merge — arrives with Module 12")

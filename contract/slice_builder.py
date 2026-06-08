@@ -27,7 +27,10 @@ def build_slice(feature: dict, policy: dict | None = None) -> FeatureSlice:
         context=feature.get("context", ""),
         goals=list(feature.get("goals", [])),
         non_goals=list(feature.get("non_goals", [])),
-        contract={"acceptance_criteria": list(feature.get("acceptance_criteria", []))},
+        # the spec the Verdict Coordinator reads from trusted state: criteria + the test files (C4).
+        contract={"acceptance_criteria": list(feature.get("acceptance_criteria", [])),
+                  "test_file": feature.get("planned_test") or feature.get("test_file"),
+                  "regression_file": feature.get("regression_file")},
         scope={"files": list(policy.get("scope_files", feature.get("scope_files", [])))},
         capability_tags=list(feature.get("capability_tags", [])),
     )

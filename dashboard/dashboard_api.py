@@ -72,6 +72,11 @@ def findings():
     return {"checker_findings": _service.findings()}
 
 
+@app.get("/lies")
+def lies():
+    return _service.lies_caught()
+
+
 @app.get("/health/system")
 def health_system():
     return _service.health_system()
