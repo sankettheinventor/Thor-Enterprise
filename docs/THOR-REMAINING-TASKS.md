@@ -11,8 +11,9 @@ GAP: the cook's actions don't route through the Leash; BuildStage writes files d
 READ: leash/proxy.py, leash/policy.py (DO NOT change — §7b), sdlc/stages.py (BuildStage), the
      CTO-scaling decision (per-room cheap Leash vs shared CTO), Integration PRD seam S4 + FLOW B,
      and _reference/ cto.js (the original decide-before + brain-inject) to port doctrine.
-WIRE: route every cook write/action in BuildStage THROUGH InRoomProxy.check_action BEFORE it
-     executes; the proxy is the cook's only exit; deny/escalate recorded via the Manager (T2 sink);
+WIRE: route every cook write/action in BuildStage THROUGH InRoomProxy.handle_tool_call BEFORE it
+     executes (the proxy's real entry point; check_action lives on the AGT adapter it calls); the
+     proxy is the cook's only exit; deny/escalate recorded via the Manager (T2 sink);
      fail-closed if the governor is unreachable. Wire the shared CTO for plan + escalation only
      (cheap mechanical per-room checks stay in the Leash). Skill inject-before (drift-3 first half).
 LOGIC/FLOW restored: FLOW B — a real out-of-scope write is DENIED before the file exists.

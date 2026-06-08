@@ -130,6 +130,7 @@ def main() -> int:
         rgood = new_repo("good")
         feat_good = {"feature_id": "F47", "title": "login", "code_file": "src/login.py",
                      "planned_test": "test_login.py",
+                     "scope_files": ("src/", "test_login.py", "test_regress.py"),  # CTO-declared scope (C1)
                      "code_files": {"src/login.py": LOGIN, "test_login.py": TEST_LOGIN, "test_regress.py": REGRESS}}
         bout = BuildStage(capability_tags=["ui-form", "auth"]).execute(feature=feat_good, repo=rgood, manager=mgr)
         build_room = bout["room_id"]
@@ -162,6 +163,7 @@ def main() -> int:
         rbug = new_repo("bug")
         feat_bug = {"feature_id": "F50", "title": "discount", "code_file": "src/discount.py",
                     "planned_test": "test_discount.py",
+                    "scope_files": ("src/", "test_discount.py", "test_regress.py"),  # CTO-declared scope (C1)
                     "code_files": {"src/discount.py": DISCOUNT, "test_discount.py": TEST_DISCOUNT, "test_regress.py": REGRESS}}
         tc.sign_plan("F50")
         bout2 = BuildStage().execute(feature=feat_bug, repo=rbug, manager=mgr)
