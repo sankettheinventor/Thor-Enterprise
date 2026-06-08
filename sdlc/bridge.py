@@ -28,6 +28,9 @@ class FindingsTicketBridge:
         return self.manager.raise_card("capability_gap", feature_id,
                                        {"missing_tag": missing_tag}, held=True)
 
-    def raise_merge_card(self, feature_id: str) -> str:
-        """Verdict done → a merge card; merge only on Signature 3 (FR-15)."""
-        return self.manager.raise_card("merge", feature_id, {"feature_id": feature_id})
+    def raise_merge_card(self, feature_id: str, repo: str | None = None, branch: str | None = None,
+                         snapshot_sha: str | None = None) -> str:
+        """Verdict done → a merge card; merge only on Signature 3 (FR-15). Carries the merge context
+        (repo/branch) + the verdict snapshot so the dashboard's Sign can drive the real, FRESH merge."""
+        return self.manager.raise_card("merge", feature_id, {
+            "feature_id": feature_id, "repo": repo, "branch": branch, "snapshot_sha": snapshot_sha})

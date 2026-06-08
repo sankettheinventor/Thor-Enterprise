@@ -41,10 +41,29 @@ class ThorManager:
         self.eventlog = EventLogWriter(conn, self.stamper)
         self._eventlog_writable = True   # toggled to demonstrate fail-closed (AC-7)
         self.sentinel = None             # attached at boot; the Coordinator escalates caught lies to it
+        self.authorized_signers: set[str] = set()   # T7: only these Ed25519 keys may sign cards
+        self._challenges: dict[str, str] = {}        # T7: one-time per-card nonces (replay defence)
 
     def attach_sentinel(self, sentinel) -> None:
         """Wire the Sentinel so a caught lie (divergence) escalates to meta-governance (T5)."""
         self.sentinel = sentinel
+
+    # ---- T7: human-signs authority — registered operator/device keys + one-time card nonces ----
+    def register_operator(self, pub_b64: str) -> None:
+        """Register an authorized signer (the CEO's operator key, or a trusted mobile device key)."""
+        self.authorized_signers.add(pub_b64)
+
+    def is_authorized_signer(self, pub_b64: str) -> bool:
+        # Back-compat: with NO signer registered, accept any (raw-mechanism unit tests). In product the
+        # boot registers the operator key, so only registered keys can sign.
+        return not self.authorized_signers or pub_b64 in self.authorized_signers
+
+    def issue_challenge(self, card_id: str) -> str:
+        """Issue a one-time nonce bound to this card; a signature must carry it, and it is consumed on
+        use — so a captured signature cannot be replayed."""
+        nonce = uuid.uuid4().hex
+        self._challenges[card_id] = nonce
+        return nonce
 
     # ---- single-writer record path (FR-2) + fail-closed (FR-15) ----
     def set_eventlog_writable(self, ok: bool) -> None:
@@ -127,16 +146,24 @@ class ThorManager:
                 "payload": json.loads(r[3]) if r[3] else {}, "status": r[4]}
 
     @staticmethod
-    def card_material(card_id: str, payload: dict) -> str:
-        """What a human signs: card-id bound to the payload hash (D5)."""
-        return f"{card_id}|{hashlib.sha256(_canon(payload).encode()).hexdigest()}"
+    def card_material(card_id: str, payload: dict, nonce: str | None = None) -> str:
+        """What a human signs: card-id bound to the payload hash (D5), and (T7) a one-time nonce."""
+        base = f"{card_id}|{hashlib.sha256(_canon(payload).encode()).hexdigest()}"
+        return f"{base}|{nonce}" if nonce else base
 
-    def approve(self, card_id: str, signature_b64: str, signer_pub_b64: str) -> dict:
+    def approve(self, card_id: str, signature_b64: str, signer_pub_b64: str,
+                nonce: str | None = None) -> dict:
         card = self._get_card(card_id)
         if not card or card["status"] in ("approved", "rejected"):
-            return {"verified": False, "reason": "card not open"}
-        if not _verify_sig(signer_pub_b64, signature_b64, self.card_material(card_id, card["payload"])):
+            return {"verified": False, "reason": "card not open"}      # replay on an approved card (AC-5)
+        if not self.is_authorized_signer(signer_pub_b64):
+            return {"verified": False, "reason": "unauthorized signer — not a registered operator key"}
+        if nonce is not None and self._challenges.get(card_id) != nonce:
+            return {"verified": False, "reason": "invalid or replayed challenge — card stays open"}
+        if not _verify_sig(signer_pub_b64, signature_b64, self.card_material(card_id, card["payload"], nonce)):
             return {"verified": False, "reason": "signature invalid — card stays open"}  # AC-5
+        if nonce is not None:
+            self._challenges.pop(card_id, None)                        # consume the nonce (replay defence)
         self._record("card.approved", {"card_id": card_id, "decided_by": signer_pub_b64[:12],
                                       "signature": signature_b64}, feature_id=card["feature_id"])
         return {"verified": True, "action_taken": "approved"}

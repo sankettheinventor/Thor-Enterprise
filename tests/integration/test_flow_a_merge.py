@@ -94,7 +94,7 @@ def test_flow_a_done_to_signed_merge(fresh_ledger, host_repo):
     assert forged["verified"] is False and mgr.is_card_approved(card) is False
 
     # 3) a valid Signature 3 → real merge → feature.merged + room destroyed
-    material = ThorManager.card_material(card, {"feature_id": "FA"})
+    material = ThorManager.card_material(card, mgr._get_card(card)["payload"])
     assert mgr.approve(card, _b64(priv.sign(material.encode())), pub)["verified"] is True
     r = driver.merge_if_authorized(card, host_repo, branch, result, ctx)
     assert r["merged"] is True, r
@@ -114,7 +114,7 @@ def test_flow_a_stale_verdict_refused(fresh_ledger, host_repo):
     driver = MergeDriver(mgr, engine=GovernanceEngine(mgr))
     card = driver.on_verdict(result)
     priv, pub, _b64 = _operator()
-    material = ThorManager.card_material(card, {"feature_id": "FS"})
+    material = ThorManager.card_material(card, mgr._get_card(card)["payload"])
     mgr.approve(card, _b64(priv.sign(material.encode())), pub)            # valid Signature 3
 
     open(os.path.join(host_repo, "src/login.py"), "a").write("# moved\n")  # branch HEAD moves
