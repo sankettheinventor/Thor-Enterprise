@@ -19,7 +19,11 @@ import os
 import re
 import subprocess
 
-from adapters import gitea_adapter
+from adapters import agt_adapter, gitea_adapter
+from leash.decision import DecisionRecorder
+from leash.policy import FrozenPolicy
+from leash.proxy import InRoomProxy
+from scheduler import cto_stub
 
 from .anatomy import Stage
 
@@ -116,18 +120,32 @@ class BuildStage(Stage):
         fid = feature["feature_id"]
         branch = f"feature/{fid}"
         room = manager.provision_room(fid, task_type="build", branch=branch, worktree_host_path=repo)
-        # The cook (stand-in) writes the feature's files into /work and commits on the branch.
-        # The room's /work is the same bind-mounted repo, so host git sees the cook's commit (M1 pattern).
+        room_id = room["room_id"]
+
+        # CTO plans at task-start (shared, rare): scope is PLAN-OWNED, deny-all if undeclared.
+        # The plan yields the FrozenPolicy the room is sealed with (Integration PRD S2).
+        plan = cto_stub.plan_task(fid, "build", feature=feature)
+        policy = FrozenPolicy(room_id=room_id, scope_files=tuple(plan["scope_files"]),
+                              forbidden_patterns=tuple(plan["forbidden_patterns"]), frozen_at=0.0)
+        # Loaded HOST-SIDE only — the policy is NEVER handed into the room; the cook can neither
+        # see nor relax its own scope. That is what makes the boundary real (C1 / P1).
+        agt_adapter.load_policy(policy)
+
+        # C1: every cook write now routes THROUGH the per-room Leash BEFORE it executes (FLOW B).
+        # The InRoomProxy is the cook's only exit: allow→written, deny→never created, escalate→held;
+        # each decision recorded via the Manager (single ledger); fail-closed if the governor is down.
+        proxy = InRoomProxy(agt_adapter, DecisionRecorder(manager), repo)
         _git(repo, "checkout", "-q", "-B", branch)
+        decisions: dict[str, str] = {}
         for rel, content in feature.get("code_files", {}).items():
-            p = os.path.join(repo, rel)
-            os.makedirs(os.path.dirname(p) or repo, exist_ok=True)
-            open(p, "w").write(content)
+            res = proxy.handle_tool_call(
+                {"name": "write_file", "room_id": room_id, "args": {"path": rel, "content": content}})
+            decisions[rel] = res["status"]
         _git(repo, "add", "-A")
         _git(repo, "-c", "user.email=cook@thor", "-c", "user.name=cook", "commit", "-q",
              "-m", f"implement {feature.get('title', fid)} [{fid}]")
-        return {"feature_id": fid, "branch": branch, "room_id": room["room_id"],
-                "claim_done": True, "_room": room}
+        return {"feature_id": fid, "branch": branch, "room_id": room_id, "claim_done": True,
+                "_room": room, "decisions": decisions, "policy_hash": policy.policy_hash}
 
     def edge_check(self, output: dict) -> tuple[bool, str]:
         ok = output.get("claim_done") and bool(output.get("branch"))
