@@ -1,71 +1,103 @@
 """
 The Scheduler — Acceptance Criteria AC-1..AC-12 (PRD §15).
 
-DEFERRED PROVING (P7 / Rule 2): written alongside, skipped by default, gated LATER. All 12 are
-demonstrated by tools/smoke_scheduler.py (AC-10 against the real Manager; the rest are pure logic).
+PROVING PASS (Task 4). The Scheduler is pure deterministic logic (zero LLM); AC-1..AC-9/11/12 prove
+in-process. AC-10 (restart without double-dispatch) verifies against a REAL Postgres-backed Manager
++ a real sealed room. Deferred (live); run: pytest -m deferred tests/scheduler.
 """
 import pytest
 
+from scheduler import cto_stub
+from scheduler.core import Scheduler
+from scheduler.graph import GraphError, Task
+
 pytestmark = pytest.mark.deferred
 
-DEFER = "deferred proving — do not gate progress (P7 / Rule 2); implement at the proving pass"
+
+def _tasks(spec):
+    """spec: list of (fid, depends_on, task_type, est, ready)."""
+    return [Task(feature_id=f, depends_on=tuple(d), task_type=tt, est_tokens=e, ready=r)
+            for (f, d, tt, e, r) in spec]
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac1_deterministic_byte_identical():
-    """AC-1: same catalog+readiness+capacity twice → byte-identical schedules."""
+    spec = [("A", (), "build", 1000, True), ("B", ("A",), "build", 1000, True),
+            ("C", (), "build", 1000, True)]
+    a = Scheduler(_tasks(spec), capacity=2).plan().to_json()
+    b = Scheduler(_tasks(spec), capacity=2).plan().to_json()
+    assert a == b
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac2_zero_llm_calls_during_scheduling():
-    """AC-2: the Scheduler makes zero LLM/planning calls while scheduling (only the CTO does)."""
+    cto_stub.reset_counter()
+    s = Scheduler(_tasks([("A", (), "build", 1000, True), ("B", (), "build", 1000, True)]), capacity=1)
+    s.plan(); s.dry_run(); s.cost_estimate()
+    assert cto_stub.PLAN_CALLS == 0   # scheduling triggers no planning call (only the CTO plans)
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac3_unmet_dependency_never_dispatches_early():
-    """AC-3: a task with an unmet dependency never appears before its prerequisite."""
+    waves = Scheduler(_tasks([("A", (), "build", 1, True), ("B", ("A",), "build", 1, True)]),
+                      capacity=5).plan().waves
+    flat = [f for w in waves for f in w]
+    assert flat.index("A") < flat.index("B")
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac4_capacity_cap_queues_overflow():
-    """AC-4: within a level, run up to capacity; the (cap+1)-th queues to the next wave."""
+    waves = Scheduler(_tasks([("A", (), "build", 1, True), ("B", (), "build", 1, True),
+                              ("C", (), "build", 1, True)]), capacity=2).plan().waves
+    assert len(waves[0]) == 2 and waves[1] == ["C"]
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac5_dry_run_provisions_nothing():
-    """AC-5: dry-run yields a full plan + cost estimate and provisions nothing."""
+    dr = Scheduler(_tasks([("A", (), "build", 1000, True)]), capacity=1).dry_run()
+    assert dr["provisioned"] == 0 and dr["cost_estimate"] > 0
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac6_budget_cap_halts_before_dispatch():
-    """AC-6: a wave exceeding the budget cap is halted before any dispatch."""
+    calls = []
+    res = Scheduler(_tasks([("A", (), "build", 5000, True), ("B", (), "build", 5000, True)]),
+                    capacity=2, budget_cap=3000).run(lambda f, tt: calls.append(f))
+    assert res["status"] == "halted_budget" and not calls
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac7_same_order_different_capacity():
-    """AC-7: identical task order at capacity=3 and capacity=10; only concurrency differs."""
+    spec = [("A", (), "build", 1, True), ("B", (), "build", 1, True), ("C", (), "build", 1, True)]
+    assert Scheduler(_tasks(spec), capacity=3).plan().flatten() == \
+        Scheduler(_tasks(spec), capacity=10).plan().flatten()
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac8_rework_redispatch_without_rerunning_deps():
-    """AC-8: a QA re-work re-dispatches the failed feature without re-running its done deps."""
+    s = Scheduler(_tasks([("A", (), "build", 1, True), ("B", ("A",), "build", 1, True)]), capacity=5)
+    s.mark_done("A")
+    s.mark_rework("B")
+    waves = s.plan().waves
+    assert "B" in [f for w in waves for f in w] and "A" not in [f for w in waves for f in w]
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac9_genesis_first_no_build_until_plan_signed():
-    """AC-9: no build task is schedulable before the plan is signed."""
+    s = Scheduler(_tasks([("A", (), "build", 1, True)]), capacity=2, plan_approved=False)
+    assert s.plan().waves == []   # no build is schedulable before the plan is signed
 
 
-@pytest.mark.skip(reason=DEFER)
-def test_ac10_restart_rebuilds_without_double_dispatch():
-    """AC-10: restart rebuilds task state from Manager events; no double-dispatch. [real Manager]"""
+def test_ac10_restart_rebuilds_without_double_dispatch(fresh_ledger):
+    from manager.core import ThorManager
+    mgr = ThorManager(fresh_ledger)
+    room = mgr.provision_room("A", task_type="build", network_mode="sealed")  # A is now 'working'
+    try:
+        s = Scheduler(_tasks([("A", (), "build", 1, True), ("B", (), "build", 1, True)]), capacity=5)
+        s.rebuild_from_manager(mgr)                      # FR-17: learn A is already running
+        flat = s.plan().flatten()
+        assert "A" not in flat and "B" in flat          # A is not re-dispatched
+    finally:
+        mgr.destroy_room(room["room_id"], room.get("_mount_plan"))
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac11_cyclic_catalog_rejected():
-    """AC-11: a cyclic catalog is rejected at load with the cycle identified."""
+    with pytest.raises(GraphError, match="cycle"):
+        Scheduler(_tasks([("A", ("B",), "build", 1, True), ("B", ("A",), "build", 1, True)]), capacity=2)
 
 
-@pytest.mark.skip(reason=DEFER)
 def test_ac12_replay_reproduces_schedule():
-    """AC-12: a replayed recorded plan reproduces the exact schedule."""
+    spec = [("A", (), "build", 1, True), ("B", ("A",), "build", 1, True), ("C", (), "build", 1, True)]
+    recorded = Scheduler(_tasks(spec), capacity=2).plan().to_json()
+    assert Scheduler(_tasks(spec), capacity=2).plan().to_json() == recorded
