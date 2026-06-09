@@ -1,117 +1,472 @@
-<!doctype html>
+<!DOCTYPE html>
 <!--
-  THOR — CEO Cockpit. The operator's WINDOW over the one truth (read + sign; never reach into a room).
-  STYLE: dashboard/dashboard.css — the original watchdog's design system, copied VERBATIM (Figtree +
-  JetBrains Mono; the status-card / kb-* / acard / feed-row / trust-bar component set). This file emits
-  the markup those classes expect, harvested into the PM-Surface layout (Direct · Watch · Decide · Audit)
-  + a FLOW-A pipeline strip + a live Governance & Self-Audit panel, wired to OUR DashboardAPI (:7080).
+  THOR — CEO Cockpit (Enterprise). The operator's WINDOW over the one truth (read + sign; never reach
+  into a room). The LOOK is the original thor-cli watchdog dashboard, copied VERBATIM (Figtree +
+  JetBrains Mono; the topbar / nav-pills / card / acard / feed-row / trust-bar component set). The DATA
+  ENGINE is rewired to OUR Enterprise DashboardAPI (:7080) — same-origin reads + Ed25519 sign.
 -->
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
-<meta name="theme-color" content="#EDEBE3"/>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
 <title>THOR · CEO Cockpit</title>
-<link rel="stylesheet" href="/dashboard.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  .content{padding:18px 18px 48px}
-  /* FLOW-A pipeline strip */
-  .pipe{display:flex;align-items:stretch;gap:6px;margin:14px 0 4px;overflow-x:auto}
-  .pipe-step{flex:1;min-width:104px;background:var(--s0);border:1px solid var(--line);border-radius:var(--r2);
-             padding:9px 11px;position:relative}
-  .pipe-step .ps-lbl{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em}
-  .pipe-step .ps-val{font-size:20px;font-weight:600;color:var(--ink);line-height:1.1;margin-top:2px}
-  .pipe-step.has::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px 0 0 3px;background:var(--brand)}
-  .pipe-arrow{display:flex;align-items:center;color:var(--ink3);font-size:13px}
-  /* the four quadrants + governance */
-  .quad{display:grid;grid-template-columns:1fr;gap:16px;margin-top:6px}
-  @media(min-width:1040px){.quad{grid-template-columns:1fr 1fr}.quad .span2{grid-column:1 / -1}}
-  .quad > section{background:var(--s0);border:1px solid var(--line);border-radius:var(--r3);padding:18px 20px;box-shadow:var(--sh0);min-width:0}
-  .kb-board{flex-direction:row;overflow-x:auto;gap:10px}
-  .kb-col{min-width:140px;flex:1;min-height:150px;max-height:none}
-  .activity{margin-top:0;border:none;box-shadow:none;padding:0}
-  /* governance rows */
-  .gov-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
-  .gov-tile{border:1px solid var(--line);border-radius:var(--r2);padding:12px 14px;background:var(--s1)}
-  .gov-tile .gt-top{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em}
-  .gov-tile .gt-val{font-size:18px;font-weight:600;margin-top:4px}
-  .gov-tile .gt-sub{font-size:12px;color:var(--ink2);margin-top:2px}
-  .gdot{width:8px;height:8px;border-radius:50%;display:inline-block}
-  .gdot.ok{background:var(--ok)}.gdot.bad{background:var(--bad)}.gdot.warn{background:var(--warn)}
-  .lie-row{display:flex;gap:8px;align-items:baseline;font-size:12px;padding:5px 0;border-top:1px dashed var(--line)}
-  .lie-room{font-family:var(--mono);color:var(--bad);font-weight:600}
+:root{
+  --page:#EDEBE3;--s0:#FFFFFF;--s1:#F5F2EB;--s2:#EDEAE2;--s3:#E4E0D6;
+  --line:rgba(0,0,0,0.07);--line2:rgba(0,0,0,0.12);--line3:rgba(0,0,0,0.18);
+  --ink:#121212;--ink2:#5A5A5A;--ink3:#999;
+  --brand:#E85D1A;--brand-l:rgba(232,93,26,0.09);--brand-m:rgba(232,93,26,0.2);
+  --ok:#1B6B3A;--ok-l:#EBF5EF;--ok-m:rgba(27,107,58,0.14);
+  --warn:#A04800;--warn-l:#FFF2E8;--warn-m:rgba(160,72,0,0.14);
+  --bad:#B83232;--bad-l:#FDEFEE;--bad-m:rgba(184,50,50,0.14);
+  --info:#1B5FAF;--info-l:#EDF4FF;
+  --neutral:#7BA7D4;
+  --r1:6px;--r2:10px;--r3:14px;--r4:20px;--r5:28px;
+  --sh1:0 1px 3px rgba(0,0,0,0.05),0 1px 2px rgba(0,0,0,0.04);
+  --sh2:0 4px 16px rgba(0,0,0,0.08),0 2px 4px rgba(0,0,0,0.04);
+  --sh3:0 8px 32px rgba(0,0,0,0.10),0 3px 8px rgba(0,0,0,0.05);
+  --font:'Figtree',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{font-size:15px;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);background:var(--page);color:var(--ink);min-height:100vh}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--line3);border-radius:2px}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:var(--r1)}
+
+.topbar{position:sticky;top:0;z-index:200;background:var(--s0);border-bottom:1px solid var(--line);height:56px;display:flex;align-items:center;padding:0 28px;gap:20px}
+.logo{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.logo-mark{width:32px;height:32px;background:var(--brand);border-radius:var(--r2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;color:#fff}
+.logo-text{font-size:14px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+.logo-sub{font-size:11px;color:var(--ink3);margin-left:4px;font-weight:400}
+.nav{flex:1;display:flex;justify-content:center}
+.nav-pills{display:flex;background:var(--s1);border-radius:var(--r5);padding:3px;gap:2px;border:1px solid var(--line)}
+.np{display:flex;align-items:center;gap:6px;padding:7px 16px;border-radius:var(--r5);font-size:13px;font-weight:500;color:var(--ink2);cursor:pointer;border:none;background:transparent;font-family:var(--font);transition:color .12s;white-space:nowrap;min-height:36px}
+.np:hover{color:var(--ink)}
+.np.on{background:var(--s0);color:var(--ink);box-shadow:var(--sh1)}
+.np-badge{background:var(--brand);color:#fff;font-size:10px;font-weight:600;min-width:18px;height:18px;padding:0 5px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono)}
+.np-live{width:6px;height:6px;border-radius:50%;background:var(--ok);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.topbar-right{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.live-pill{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ink3);font-family:var(--mono)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:0 18px;border-radius:var(--r4);font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:background .12s,transform .08s;font-family:var(--font);white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn-brand{background:var(--brand);color:#fff;border-color:var(--brand)}.btn-brand:hover{background:#D0510F}
+.btn-ok{background:var(--ok);color:#fff;border-color:var(--ok)}.btn-ok:hover{background:#155E30}
+.btn-ghost{background:transparent;color:var(--ink2);border-color:var(--line2)}.btn-ghost:hover{background:var(--s1);color:var(--ink)}
+.btn-warn{background:var(--warn-l);color:var(--warn);border-color:rgba(160,72,0,.2)}
+.btn-bad{background:var(--bad-l);color:var(--bad);border-color:rgba(184,50,50,.2)}
+.btn-sm{min-height:32px;padding:0 14px;font-size:12px}
+.page{padding:24px 28px;max-width:1400px}
+.panel{display:none}.panel.on{display:block;animation:pIn .16s ease}
+@keyframes pIn{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.g-wide{display:grid;grid-template-columns:3fr 2fr;gap:14px}
+.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}.mb20{margin-bottom:20px}.mb24{margin-bottom:24px}
+.mt8{margin-top:8px}.mt12{margin-top:12px}
+.row{display:flex;align-items:center}.rowb{display:flex;align-items:center;justify-content:space-between}
+.col{display:flex;flex-direction:column}
+.g6{gap:6px}.g8{gap:8px}.g10{gap:10px}.g12{gap:12px}
+.ink2{color:var(--ink2)}.ink3{color:var(--ink3)}
+.f11{font-size:11px}.f12{font-size:12px}.f13{font-size:13px}.f14{font-size:14px}.f16{font-size:16px}
+.w5{font-weight:500}.w6{font-weight:600}
+.mono{font-family:var(--mono)}
+.divider{height:1px;background:var(--line);margin:16px 0}
+.card{background:var(--s0);border:1px solid var(--line);border-radius:var(--r3);padding:18px 20px}
+.card-dark{background:#111;border-radius:var(--r3);padding:20px 24px}
+.card-title{font-size:13px;font-weight:600;color:var(--ink);letter-spacing:-.01em}
+.inner{background:var(--s1);border-radius:var(--r2);padding:14px 16px}
+.chip{display:inline-flex;align-items:center;font-size:11px;font-weight:600;padding:3px 9px;border-radius:var(--r1);font-family:var(--mono);letter-spacing:.01em;line-height:1}
+.c-brand{background:var(--brand-l);color:var(--brand)}
+.c-ok{background:var(--ok-l);color:var(--ok)}
+.c-warn{background:var(--warn-l);color:var(--warn)}
+.c-bad{background:var(--bad-l);color:var(--bad)}
+.c-info{background:var(--info-l);color:var(--info)}
+.c-neutral{background:var(--s2);color:var(--ink2);border:1px solid var(--line)}
+.stat-n{font-size:36px;font-weight:600;letter-spacing:-.04em;line-height:1;color:var(--ink)}
+.stat-n.white{color:#fff}.stat-n.brand{color:var(--brand)}.stat-n.ok{color:var(--ok)}.stat-n.warn{color:var(--warn)}.stat-n.bad{color:var(--bad)}
+.stat-lbl{font-size:10px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.09em;font-family:var(--mono);margin-bottom:7px}
+.stat-lbl.w{color:rgba(255,255,255,.45)}
+.stat-sub{font-size:11px;color:var(--ink3);margin-top:5px;font-family:var(--mono)}
+.stat-sub.w{color:rgba(255,255,255,.38)}
+.trust-bar{display:flex;align-items:center;gap:14px;padding:12px 20px;border-radius:var(--r3);margin-bottom:20px;font-family:var(--mono);font-size:13px;font-weight:600}
+.trust-bar.safe{background:var(--ok-l);border:1.5px solid var(--ok-m);color:var(--ok)}
+.trust-bar.warn{background:var(--warn-l);border:1.5px solid var(--warn-m);color:var(--warn)}
+.trust-bar.bad{background:var(--bad-l);border:1.5px solid var(--bad-m);color:var(--bad)}
+.trust-bar .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.trust-bar.safe .dot{background:var(--ok)}.trust-bar.warn .dot{background:var(--warn)}.trust-bar.bad .dot{background:var(--bad)}
+.feed-row{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}.feed-row:last-child{border-bottom:none}
+.feed-dot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex-shrink:0}
+.fd-alarm{background:var(--bad)}.fd-ok{background:var(--ok)}.fd-info{background:var(--neutral)}.fd-warn{background:var(--warn)}.fd-revert{background:var(--brand)}
+.feed-kind{font-size:11px;font-weight:600;color:var(--ink3);font-family:var(--mono)}
+.feed-txt{font-size:12px;color:var(--ink2);margin:2px 0;line-height:1.5}.feed-time{font-size:10px;color:var(--ink3);font-family:var(--mono)}
+/* Approval card — Apple-style: generous padding, subtle shadow, clean hierarchy */
+.acard{background:var(--s0);border:1px solid var(--line);border-radius:var(--r3);padding:26px 28px;margin-bottom:14px;box-shadow:var(--sh1);transition:box-shadow .15s ease,transform .08s ease}
+.acard:hover{box-shadow:var(--sh2)}
+/* Tier signal lives in the chip — removed the heavy 4px left stripe */
+.acard.t3,.acard.t2,.acard.t1,.acard.cto-card{border-left:1px solid var(--line)}
+.acard .tier-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:8px;vertical-align:middle}
+.acard.t3 .tier-dot{background:var(--bad)}
+.acard.t2 .tier-dot{background:var(--warn)}
+.acard.t1 .tier-dot{background:var(--ok)}
+.acard.cto-card .tier-dot{background:var(--info)}
+.a-title{font-size:18px;font-weight:600;color:var(--ink);margin-bottom:12px;letter-spacing:-.02em;line-height:1.35}
+.a-plain{font-size:14px;color:var(--ink);line-height:1.65;margin-bottom:14px;background:transparent;border-radius:0;padding:0}
+.a-plain strong{font-weight:600}
+.a-tech{display:none;font-size:12px;color:var(--ink2);line-height:1.6;margin:10px 0;font-family:var(--mono);background:var(--s1);border-radius:var(--r2);padding:14px 16px}.a-tech.open{display:block}
+.a-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+/* Primary action inside a card is comfortable-sized; tertiary actions collapse to text links */
+.acard .a-actions .btn-ok,.acard .a-actions .btn-brand{min-height:40px;padding:0 22px;font-size:14px;border-radius:var(--r4)}
+.acard .a-actions .btn-bad{min-height:36px;padding:0 16px;font-size:13px;background:transparent;border-color:var(--line2);color:var(--bad)}
+.acard .a-actions .btn-bad:hover{background:var(--bad-l);border-color:rgba(184,50,50,.25)}
+.acard .a-actions .btn-warn,.acard .a-actions .btn-ghost{background:transparent;border-color:transparent;color:var(--ink2);padding:0 10px;font-weight:500}
+.acard .a-actions .btn-warn:hover,.acard .a-actions .btn-ghost:hover{background:var(--s1);color:var(--ink)}
+.a-feedback{margin-top:14px;display:none}.a-feedback.open{display:block}
+/* Fact chips below the body — a single clean row of context */
+.a-facts{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 4px}
+.a-fact{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--s1);border:1px solid var(--line);font-size:11px;color:var(--ink2);font-weight:500}
+.a-fact-dot{width:6px;height:6px;border-radius:50%;background:var(--ink3)}
+.a-fact-risk.a-fact-low .a-fact-dot{background:var(--ok)}
+.a-fact-risk.a-fact-medium .a-fact-dot{background:var(--warn)}
+.a-fact-risk.a-fact-high .a-fact-dot{background:var(--bad)}
+.a-fact-risk.a-fact-low{color:var(--ok);background:var(--ok-l);border-color:var(--ok-m)}
+.a-fact-risk.a-fact-medium{color:var(--warn);background:var(--warn-l);border-color:var(--warn-m)}
+.a-fact-risk.a-fact-high{color:var(--bad);background:var(--bad-l);border-color:var(--bad-m)}
+/* Two-step discard — armed state is louder than default ghost */
+.acard .a-actions .btn-bad.btn-bad-armed{background:var(--bad);color:#fff;border-color:var(--bad);animation:pulse-bad .9s ease-out infinite alternate}
+@keyframes pulse-bad{from{box-shadow:0 0 0 0 var(--bad-m)}to{box-shadow:0 0 0 4px transparent}}
+.hrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}.hrow:last-child{border-bottom:none}
+.hrow-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.hrow-name{flex:1;font-size:13px;color:var(--ink2)}
+.field{display:block;width:100%;background:var(--s0);border:1.5px solid var(--line2);border-radius:var(--r2);padding:10px 13px;font-size:14px;font-family:var(--font);color:var(--ink);outline:none;transition:border .12s}
+.field:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-l)}
+.field::placeholder{color:var(--ink3)}
+textarea.field{resize:vertical;min-height:80px;line-height:1.6}
+.field-lbl{display:block;font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.07em;font-family:var(--mono);margin-bottom:6px}
+.fg{margin-bottom:14px}.fg-row{display:flex;gap:10px}
+.diff{border:1px solid var(--line);border-radius:var(--r2);overflow:hidden;font-family:var(--mono);font-size:11.5px;max-height:300px;overflow-y:auto}
+.diff-hd{background:var(--s1);padding:7px 14px;border-bottom:1px solid var(--line);color:var(--ink2);font-size:11px}
+.dl{padding:2px 14px;line-height:1.9;white-space:pre-wrap;word-break:break-all}
+.dl-add{background:#F0FDF4;color:#15803D}.dl-rem{background:#FFF5F5;color:#B91C1C}.dl-ctx{color:var(--ink3)}
+.empty{text-align:center;padding:32px 20px;color:var(--ink3)}
+.empty-ico{font-size:24px;margin-bottom:10px;opacity:.35}
+.empty-title{font-size:14px;font-weight:600;color:var(--ink2);margin-bottom:6px}
+.empty-body{font-size:12px;line-height:1.7;max-width:280px;margin:0 auto}
+.mwrap{display:none;position:fixed;inset:0;z-index:500;align-items:center;justify-content:center}
+.mwrap.open{display:flex}
+.mbg{position:absolute;inset:0;background:rgba(0,0,0,0.3);backdrop-filter:blur(2px)}
+.mbox{position:relative;z-index:1;background:var(--s0);border:1px solid var(--line2);border-radius:20px;padding:28px;width:580px;max-width:92vw;max-height:88vh;overflow-y:auto;box-shadow:var(--sh3);animation:mIn .18s cubic-bezier(.34,1.56,.64,1)}
+@keyframes mIn{from{opacity:0;transform:scale(.95) translateY(8px)}to{opacity:1;transform:none}}
+.mbox-title{font-size:18px;font-weight:600;color:var(--ink);margin-bottom:5px}
+.mbox-sub{font-size:13px;color:var(--ink2);margin-bottom:20px;line-height:1.6}
+.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.tcol{background:var(--s1);border:1px solid var(--line);border-radius:var(--r3);padding:14px}
+.tcol-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.tcol-name{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:.08em;font-family:var(--mono)}
+.tcard{background:var(--s0);border:1px solid var(--line);border-radius:var(--r2);padding:13px 14px;margin-bottom:8px;transition:border-color .12s,box-shadow .12s}
+.tcard:hover{border-color:var(--brand-m);box-shadow:var(--sh1)}
+.tcard-name{font-size:13px;font-weight:600;color:var(--ink);margin-bottom:4px}
+.tcard-body{font-size:12px;color:var(--ink3);line-height:1.5;margin-bottom:8px}
+.risk-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.risk-lbl{font-size:11px;color:var(--ink3);font-family:var(--mono);width:36px}
+.risk-track{flex:1;height:4px;background:var(--s2);border-radius:2px}
+.risk-fill{height:4px;border-radius:2px}
+.a-facts{display:flex;gap:16px;font-size:11px;color:var(--ink3);font-family:var(--mono);margin-bottom:14px;flex-wrap:wrap}
+.test-bar{height:8px;border-radius:4px;background:var(--s2);overflow:hidden;margin:8px 0}
+.test-fill{height:8px;border-radius:4px;background:var(--ok)}
+.toast-stack{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:700;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none}
+.toast{background:#1A1A1A;color:#F0F0F0;border-radius:30px;padding:10px 20px 10px 14px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:9px;box-shadow:var(--sh2);animation:tIn .2s cubic-bezier(.34,1.56,.64,1),tOut .2s ease 3.8s forwards;pointer-events:auto}
+.toast-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+@keyframes tIn{from{opacity:0;transform:translateY(10px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes tOut{from{opacity:1}to{opacity:0;transform:translateY(5px)}}
+/* Enterprise lie-detail rows (governance) */
+.lie-row{display:flex;gap:8px;align-items:baseline;font-size:12px;padding:5px 0;border-top:1px dashed var(--line)}
+.lie-room{font-family:var(--mono);color:var(--bad);font-weight:600}
 </style>
 </head>
 <body>
 
-<header class="topbar" role="banner">
-  <div class="logo"><div class="logo-mark" aria-hidden="true">T</div>
-    <div><span class="logo-text">THOR</span><span class="logo-sub">CEO Cockpit · the only voice you sign with</span></div></div>
-  <div class="topbar-spacer"></div>
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-mark">T</div>
+    <span class="logo-text">THOR<span class="logo-sub"> CEO Cockpit</span></span>
+  </div>
+  <nav class="nav"><div class="nav-pills">
+    <button class="np on" onclick="go('home')">Home</button>
+    <button class="np" id="nav-decide" onclick="go('decide')">Decide <span class="np-badge" id="badge-decide">0</span></button>
+    <button class="np" onclick="go('work')">Work</button>
+    <button class="np" onclick="go('watch')">Watch <span class="np-live"></span></button>
+    <button class="np" onclick="go('security')">Security</button>
+  </div></nav>
   <div class="topbar-right">
     <span class="chip c-ok" title="Ed25519 signing — your key, signed in your browser">sign enabled</span>
-    <div class="live-pill" style="display:flex"><span class="np-live"></span> <span id="live-text">connecting…</span></div>
+    <div class="live-pill"><span class="np-live"></span> <span id="live-text">connecting</span></div>
+    <button class="btn btn-brand btn-sm" onclick="openM('m-task')">+ New task</button>
   </div>
 </header>
 
-<main class="content">
+<div class="page">
 
-  <!-- SAFE / WARN / BAD system banner -->
-  <div class="trust-bar warn" id="trust-bar">
+<!-- ══ HOME ══ -->
+<div class="panel on" id="panel-home">
+
+  <!-- TRUST BANNER — real, from Sentinel + Self-Audit (/health/system) -->
+  <div class="trust-bar safe" id="trust-bar">
     <div class="dot"></div>
-    <span class="lead" id="trust-text">THOR · connecting…</span>
-    <span class="meta" id="trust-detail"></span>
-    <span class="uptime" id="trust-uptime"></span>
+    <span id="trust-text">THOR · connecting...</span>
+    <span style="margin-left:auto;font-size:11px;font-weight:400;opacity:.7" id="trust-detail"></span>
   </div>
 
-  <!-- glance stats (status-card idiom) -->
-  <div class="status-row">
-    <div class="status-card"><div class="top"><span class="label">Decisions waiting</span></div><div class="stat" id="st-pending">0</div><div class="sublabel" id="st-pending-sub">nothing waiting</div></div>
-    <div class="status-card"><div class="top"><span class="label">Governance</span></div><div class="stat" id="st-gov">—</div><div class="sublabel" id="st-gov-sub">sentinel + self-audit</div></div>
-    <div class="status-card"><div class="top"><span class="label">System meta-trust</span></div><div class="stat" id="st-trust">—</div><div class="sublabel">system reliability</div></div>
-    <div class="status-card"><div class="top"><span class="label">Lies caught</span></div><div class="stat" id="st-lies">0</div><div class="sublabel" id="st-lies-sub">honesty enforced</div></div>
-    <div class="status-card"><div class="top"><span class="label">Token spend</span></div><div class="stat" id="st-spend">0</div><div class="sublabel" id="st-spend-sub">of cap</div></div>
+  <!-- ══ ENTERPRISE PANELS — the moat, prominent on HOME (same card/stat/chip CSS) ══ -->
+  <div class="g4 mb20" id="ent-panels">
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">System meta-trust</div><span class="chip c-info" id="ent-trust-chip">—</span></div>
+      <div class="stat-n" id="ent-trust">—</div>
+      <div class="stat-sub" id="ent-trust-sub">system reliability — not per-agent trust</div>
+    </div>
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">Lies caught</div><span class="chip c-ok" id="ent-lies-chip">honesty</span></div>
+      <div class="stat-n" id="ent-lies">0</div>
+      <div class="stat-sub" id="ent-lies-sub">claim-vs-reality lie detector</div>
+      <div id="ent-lies-detail" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">Token spend</div><span class="chip c-neutral" id="ent-spend-chip">no cap</span></div>
+      <div class="stat-n" id="ent-spend">0</div>
+      <div class="stat-sub" id="ent-spend-sub">of cap</div>
+      <div id="ent-spend-detail" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">Self-Audit</div><span class="chip c-ok" id="ent-sa-chip">read-only</span></div>
+      <div class="f14 w6" id="ent-sa-model" style="margin-top:2px">—</div>
+      <div class="stat-sub" id="ent-sa-sub">the read-only eyes</div>
+    </div>
   </div>
 
-  <!-- FLOW A pipeline (the spine, live counts) -->
-  <div class="pipe" id="pipe"></div>
-
-  <!-- FOUR QUADRANTS + governance -->
-  <div class="quad">
-
-    <section>
-      <div class="panel-head"><h2>Direct</h2><span class="panel-sub">feature kanban</span><span class="chip c-neutral" id="kb-count" style="margin-left:auto">—</span></div>
-      <div class="kb-board" id="kanban"></div>
-    </section>
-
-    <section>
-      <div class="panel-head"><h2>Watch</h2><span class="panel-sub">live rooms + token spend</span><span class="chip c-ok" id="rooms-count" style="margin-left:auto">0</span></div>
-      <div id="rooms"></div>
-      <div class="divider"></div>
-      <div id="cost"></div>
-    </section>
-
-    <section>
-      <div class="panel-head"><h2>Decide</h2><span class="panel-sub">approval queue — your signature</span><span class="chip c-brand" id="cards-count" style="margin-left:auto">0</span></div>
-      <div id="cards"></div>
-    </section>
-
-    <section>
-      <div class="activity">
-        <div class="activity-head"><span class="activity-title">Audit · ledger feed</span><span class="activity-meta" id="feed-count">live</span></div>
-        <div class="activity-body" id="audit"></div>
+  <!-- Hero stats -->
+  <div class="g-wide mb20">
+    <div class="card-dark">
+      <div class="rowb mb12">
+        <div class="stat-lbl w">Decisions waiting for you</div>
       </div>
-      <div class="f11 ink3 mono" style="margin-top:8px">Every row is a signed, hash-chained event from the Manager's ledger — not the cook's claim.</div>
-    </section>
+      <div class="stat-n white" id="stat-pending">0</div>
+      <div class="stat-sub w" id="stat-pending-sub">nothing waiting</div>
+      <div style="height:1px;background:rgba(255,255,255,.07);margin:16px 0"></div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div><div class="stat-lbl w">Approved</div><div style="font-size:24px;font-weight:600;color:#fff" id="stat-approved">0</div></div>
+        <div><div class="stat-lbl w">Rejected</div><div style="font-size:24px;font-weight:600;color:#fff" id="stat-rejected">0</div></div>
+        <div><div class="stat-lbl w">Total</div><div style="font-size:24px;font-weight:600;color:var(--brand)" id="stat-total">0</div></div>
+      </div>
+    </div>
 
-    <section class="span2">
-      <div class="panel-head"><h2>Governance &amp; Self-Audit</h2><span class="panel-sub">meta-governance · the read-only eyes</span></div>
-      <div class="gov-grid" id="gov"></div>
-      <div id="lies-detail" style="margin-top:10px"></div>
-    </section>
-
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">Project health</div><span class="chip c-neutral mono" id="session-chip">—</span></div>
+      <div class="g2 mb12" style="gap:8px">
+        <div class="inner"><div class="stat-lbl">Open risks</div><div class="stat-n" style="font-size:24px" id="stat-risks">0</div><div class="stat-sub" id="stat-risks-sub">—</div></div>
+        <div class="inner"><div class="stat-lbl">Open findings</div><div class="stat-n" style="font-size:24px" id="stat-findings">0</div><div class="stat-sub" id="stat-findings-sub">—</div></div>
+      </div>
+      <div id="health-bar" style="background:var(--ok);border-radius:var(--r2);padding:11px 14px">
+        <div class="f11 mono" style="color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">System health</div>
+        <div class="f13" style="color:#fff" id="health-text">checking...</div>
+      </div>
+    </div>
   </div>
-</main>
+
+  <!-- Live status — what each process is doing RIGHT NOW -->
+  <div class="g3 mb20">
+    <div class="card">
+      <div class="rowb mb8"><div class="row g8"><div style="width:8px;height:8px;border-radius:50%;background:var(--brand)"></div><span class="f13 w6">Claude (builder)</span></div><span class="chip c-brand" id="claude-state">idle</span></div>
+      <div class="f12 ink2" id="claude-doing">Waiting for task</div>
+    </div>
+    <div class="card">
+      <div class="rowb mb8"><div class="row g8"><div style="width:8px;height:8px;border-radius:50%;background:var(--info)"></div><span class="f13 w6">CTO (thinking guard)</span></div><span class="chip c-info" id="cto-chip">planner ready</span></div>
+      <div class="f12 ink2" id="cto-doing">Shared planner — scope + skills set at plan time</div>
+    </div>
+    <div class="card">
+      <div class="rowb mb8"><div class="row g8"><div style="width:8px;height:8px;border-radius:50%;background:var(--ok)"></div><span class="f13 w6">Watchdog (security)</span></div><span class="chip c-ok" id="wd-state">alive</span></div>
+      <div class="f12 ink2" id="wd-doing">Guarding files</div>
+    </div>
+  </div>
+
+  <!-- Project pulse — one-glance health -->
+  <div class="card mb20" id="pulse-card">
+    <div class="rowb mb12">
+      <div class="row g8"><div style="width:7px;height:7px;border-radius:50%;background:var(--brand)"></div><span class="f14 w6">Project pulse</span><span class="chip c-info" id="pulse-refresh">—</span></div>
+      <span class="f11 ink3" id="pulse-scope-line">live from the ledger</span>
+    </div>
+    <div id="pulse-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px"></div>
+    <div class="row g8 mt12" style="flex-wrap:wrap;align-items:center">
+      <span class="f11 ink3">Last merge</span>
+      <code class="f11 mono" id="pulse-commit" style="background:var(--s2);padding:2px 6px;border-radius:3px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</code>
+    </div>
+  </div>
+
+  <!-- Activity Logbook — mirrors the ledger feed -->
+  <div class="card mb20" id="activity-logbook">
+    <div class="rowb mb12">
+      <div class="row g8"><div style="width:7px;height:7px;border-radius:50%;background:var(--info)"></div><span class="f14 w6">Activity logbook</span><span class="chip c-info" id="activity-count">—</span></div>
+      <span class="f11 ink3" id="activity-refresh">—</span>
+    </div>
+    <div id="activity-rows" style="max-height:320px;overflow-y:auto;font-family:monospace;font-size:11px;line-height:1.5">
+      <div class="ink3" id="activity-empty">no entries yet</div>
+    </div>
+  </div>
+
+  <!-- Feature status — counts only, no percentages. Single source of truth for "how much is built". -->
+  <div id="feature-grid-card" style="background:#FFF7E6;border:3px solid #E85D1A;border-radius:12px;padding:20px 22px;margin-bottom:20px;color:#222;box-shadow:0 0 0 2px rgba(232,93,26,.15)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="display:flex;gap:10px;align-items:center">
+        <span style="display:inline-block;background:#E85D1A;color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;letter-spacing:.08em">FEATURE STATUS</span>
+        <span style="font-size:13px;color:#555" id="fg-total">— features</span>
+      </div>
+      <span style="font-size:11px;color:#888" id="fg-updated">—</span>
+    </div>
+    <div id="fg-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      <div style="padding:14px;background:#fff;border:1px solid #E5C19C;border-radius:8px">
+        <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.08em;font-weight:700">Done</div>
+        <div style="font-size:28px;font-weight:700;color:#1B6B3A;margin-top:6px" id="fg-done-count">—</div>
+        <div style="font-size:11px;color:#555;margin-top:6px;line-height:1.4;word-break:break-word;font-family:monospace" id="fg-done-list">—</div>
+      </div>
+      <div style="padding:14px;background:#fff;border:1px solid #E5C19C;border-radius:8px">
+        <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.08em;font-weight:700">In progress</div>
+        <div style="font-size:28px;font-weight:700;color:#A04800;margin-top:6px" id="fg-ip-count">—</div>
+        <div style="font-size:11px;color:#555;margin-top:6px;line-height:1.4;word-break:break-word;font-family:monospace" id="fg-ip-list">—</div>
+      </div>
+      <div style="padding:14px;background:#fff;border:1px solid #E5C19C;border-radius:8px">
+        <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.08em;font-weight:700">Stub</div>
+        <div style="font-size:28px;font-weight:700;color:#888;margin-top:6px" id="fg-stub-count">—</div>
+        <div style="font-size:11px;color:#555;margin-top:6px;line-height:1.4;word-break:break-word;font-family:monospace" id="fg-stub-list">—</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:#666;margin-top:14px">Done = merged features · In progress = building / QA / awaiting signature · Stub = backlog / ready. Counts come from the Manager's kanban.</div>
+  </div>
+
+  <!-- CTO details + Brain -->
+  <div class="g2 mb20">
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">CTO Details</div><span class="chip c-info" id="cto-detail-chip">planner</span></div>
+      <div id="cto-panel"><div class="f12 ink2">Shared planner — scope + skills set at plan time. There is no per-agent reputation; the line moves on verdicts from reality, not claims.</div></div>
+    </div>
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">Brain Status</div><span class="chip c-ok" id="brain-chip">ok</span></div>
+      <div id="brain-panel"><div class="f12 ink2">GovEngine — verdict-from-reality · 8 probes. Every decision is a computed verdict against the real artifact, not Claude's claim.</div></div>
+    </div>
+  </div>
+
+  <!-- CTO Decisions log -->
+  <div class="card mb20">
+    <div class="rowb mb12">
+      <div class="row g8"><div style="width:7px;height:7px;border-radius:50%;background:var(--brand)"></div><span class="f14 w6">CTO Decisions</span><span class="chip c-brand" id="cto-decisions-chip">0</span></div>
+      <div class="row g8">
+        <span class="chip c-neutral" id="cto-health-chip">from the ledger</span>
+      </div>
+    </div>
+    <div id="cto-decisions-panel" style="max-height:300px;overflow-y:auto"><div class="f12 ink3">Waiting for decision events...</div></div>
+  </div>
+
+  <!-- Pending decisions preview -->
+  <div class="mb20">
+    <div class="rowb mb12">
+      <div class="row g8"><div style="width:7px;height:7px;border-radius:50%;background:var(--brand)"></div><span class="f14 w6">Decisions waiting</span><span class="chip c-brand" id="home-decide-chip">0</span></div>
+      <button class="btn btn-ghost btn-sm" onclick="go('decide')">See all →</button>
+    </div>
+    <div id="home-queue"></div>
+  </div>
+
+  <!-- Bottom grid -->
+  <div class="g3">
+    <div class="card">
+      <div class="rowb mb12"><div class="row g8"><span class="np-live"></span><span class="f13 w6">What just happened</span></div><span class="chip c-ok">live</span></div>
+      <div id="home-feed"><div class="empty"><div class="empty-ico">○</div>loading...</div></div>
+    </div>
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">Governance</div><span class="chip c-ok" id="gov-badge">up</span></div>
+      <div id="gov-panel"><div class="f12 ink3">loading...</div></div>
+    </div>
+    <div style="background:var(--brand);border-radius:var(--r3);padding:20px;display:flex;flex-direction:column;justify-content:space-between;min-height:180px">
+      <div>
+        <div class="f11 mono" style="color:rgba(255,255,255,.55);text-transform:uppercase;letter-spacing:.09em;margin-bottom:10px">Need something?</div>
+        <div style="font-size:18px;font-weight:600;color:#fff;line-height:1.35">Request a feature, fix, or investigation</div>
+      </div>
+      <button class="btn" style="background:#fff;color:var(--brand);border:none;width:fit-content;margin-top:16px;font-weight:600" onclick="openM('m-task')">+ Request</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DECIDE ══ -->
+<div class="panel" id="panel-decide">
+  <div class="rowb mb20"><div><div class="f16 w6">Your decisions</div><div class="f13 ink3 mt8">The line paused and needs your signature</div></div></div>
+  <div id="decide-queue"><div class="empty"><div class="empty-ico">✓</div><div class="empty-title">Nothing waiting</div></div></div>
+</div>
+
+<!-- ══ WATCH ══ -->
+<div class="panel" id="panel-watch">
+  <div class="rowb mb20"><div><div class="f16 w6">Activity feed</div><div class="f13 ink3 mt8">Every signed, hash-chained event from the Manager's ledger — not the cook's claim</div></div>
+    <span class="chip c-ok" id="feed-count">live</span>
+  </div>
+  <div class="card" id="full-feed" style="max-height:600px;overflow-y:auto;padding:6px 20px"><div class="empty">loading...</div></div>
+</div>
+
+<!-- ══ WORK ══ -->
+<div class="panel" id="panel-work">
+  <div class="rowb mb20"><div><div class="f16 w6">Work in progress</div><div class="f13 ink3 mt8">Every feature on the kanban — provisioned into sealed rooms, verdict by reality</div></div>
+    <button class="btn btn-brand btn-sm" onclick="openM('m-task')">+ Assign task</button>
+  </div>
+  <div class="card mb16">
+    <div class="rowb"><div class="card-title">Tests</div><span class="chip c-ok" id="test-chip">—</span></div>
+    <div class="test-bar"><div class="test-fill" id="test-fill" style="width:100%"></div></div>
+    <div class="f12 ink3 mono mt8" id="test-detail">checking...</div>
+  </div>
+  <div class="g4">
+    <div class="tcol"><div class="tcol-hd"><span class="tcol-name">Queued</span><span class="chip c-neutral" id="cnt-q">0</span></div><div id="col-q"></div></div>
+    <div class="tcol"><div class="tcol-hd"><span class="tcol-name">Planning</span><span class="chip c-brand" id="cnt-p">0</span></div><div id="col-p"></div></div>
+    <div class="tcol"><div class="tcol-hd"><span class="tcol-name">Building</span><span class="chip c-brand" id="cnt-b">0</span></div><div id="col-b"></div></div>
+    <div class="tcol"><div class="tcol-hd"><span class="tcol-name">Done</span><span class="chip c-ok" id="cnt-d">0</span></div><div id="col-d"></div></div>
+  </div>
+</div>
+
+<!-- ══ SECURITY ══ -->
+<div class="panel" id="panel-security">
+  <div class="rowb mb20"><div><div class="f16 w6">Security &amp; Hooks</div><div class="f13 ink3 mt8">Sentinel halt authority, watched surfaces, CTO violations</div></div></div>
+  <div class="g2 mb16">
+    <div class="card">
+      <div class="card-title mb12">Watchdog crawlers</div>
+      <div id="crawler-panel"><div class="empty">loading...</div></div>
+    </div>
+    <div class="card">
+      <div class="rowb mb12"><div class="card-title">CTO Violations</div><span class="chip c-neutral" id="violation-count">0</span></div>
+      <div id="violation-panel"><div class="f12 ink3">No leash violations recorded</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title mb12">Triggers</div>
+    <div id="trigger-panel"><div class="empty">loading...</div></div>
+  </div>
+</div>
+
+</div><!-- /page -->
+
+<!-- ══ NEW TASK MODAL ══ -->
+<div class="mwrap" id="m-task">
+  <div class="mbg" onclick="closeM('m-task')"></div>
+  <div class="mbox">
+    <div class="mbox-title">What do you need Claude to do?</div>
+    <div class="mbox-sub">Describe it in plain English. THOR figures out the technical details.</div>
+    <div class="fg"><label class="field-lbl">Describe the task</label><textarea class="field" id="t-desc" placeholder="e.g. Add a forgot password flow to the login page" rows="3"></textarea></div>
+    <div class="fg-row">
+      <div class="fg" style="flex:1"><label class="field-lbl">How urgent?</label><select class="field" id="t-pri"><option value="4">Not urgent</option><option value="3" selected>Normal</option><option value="1">Urgent</option></select></div>
+    </div>
+    <div class="fg"><label class="field-lbl">Your advice to Claude (optional)</label><textarea class="field" id="t-advice" placeholder="e.g. Make it simple. No extra libraries. Use existing email system." rows="2"></textarea></div>
+    <div class="fg"><label class="field-lbl">Files Claude should never touch (optional)</label><input type="text" class="field" id="t-protect" placeholder="/payments, database.js"></div>
+    <div class="row g8 mt8"><button class="btn btn-brand" onclick="submitTask()">Assign to Claude</button><button class="btn btn-ghost" onclick="closeM('m-task')">Cancel</button></div>
+  </div>
+</div>
+
+<div class="toast-stack" id="toasts"></div>
 
 <script>
 (() => {
@@ -120,193 +475,448 @@
   const $ = id => document.getElementById(id);
   let failCount = 0;
 
-  const esc = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-  function relTime(ts){
+  // ── UI MECHANICS (verbatim idiom from the original) ──
+  function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function relTime(ts) {
     if (ts == null || ts === '') return '';
     let sec = typeof ts === 'number' ? (Date.now()/1000) - ts : (Date.now() - new Date(ts).getTime())/1000;
     if (sec < 0) sec = 0;
-    if (sec < 60) return Math.floor(sec)+'s ago';
-    if (sec < 3600) return Math.floor(sec/60)+'m ago';
-    if (sec < 86400) return Math.floor(sec/3600)+'h ago';
-    return Math.floor(sec/86400)+'d ago';
+    if (sec < 60) return Math.floor(sec) + 's ago';
+    if (sec < 3600) return Math.floor(sec/60) + 'm ago';
+    if (sec < 86400) return Math.floor(sec/3600) + 'h ago';
+    return Math.floor(sec/86400) + 'd ago';
   }
-  async function get(p){ const r = await fetch(location.origin+p,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
-  const live = t => { const el = $('live-text'); if (el) el.textContent = t; };
+  async function get(p) { const r = await fetch(location.origin + p, { cache:'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }
+  async function post(p, body) {
+    const r = await fetch(location.origin + p, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body||{}) });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }
 
-  function renderTrust(summary){
-    const bar = $('trust-bar'), h = summary.health || {};
-    const halted = h.sentinel && h.sentinel.halted;
-    const alive = h.sentinel && h.sentinel.alive && !halted;
+  function toast(msg, type) {
+    const cols = { ok:'#1B6B3A', warn:'#A04800', bad:'#B83232', brand:'#E85D1A' };
+    const el = document.createElement('div'); el.className = 'toast';
+    const dot = document.createElement('div'); dot.className = 'toast-dot'; dot.style.background = cols[type] || cols.ok;
+    el.appendChild(dot); el.appendChild(document.createTextNode(msg));
+    $('toasts').appendChild(el); setTimeout(() => el.remove(), 4100);
+  }
+  window.toast = toast;
+
+  function openM(id) { $(id).classList.add('open'); }
+  function closeM(id) { $(id).classList.remove('open'); }
+  window.openM = openM; window.closeM = closeM;
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.mwrap.open').forEach(m => m.classList.remove('open')); });
+
+  // ── NAV ──
+  const PANELS = ['home','decide','work','watch','security'];
+  function go(name) {
+    PANELS.forEach(p => { const el = $('panel-' + p); if (el) el.classList.remove('on'); });
+    document.querySelectorAll('.np').forEach(b => b.classList.remove('on'));
+    const panel = $('panel-' + name); if (panel) panel.classList.add('on');
+    document.querySelectorAll('.np').forEach(b => { if (b.textContent.toLowerCase().includes(name)) b.classList.add('on'); });
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }
+  window.go = go;
+
+  // ── TRUST BANNER (Sentinel + Self-Audit, /health/system via /state/summary.health) ──
+  function renderTrust(summary) {
+    const bar = $('trust-bar'), txt = $('trust-text'), det = $('trust-detail');
+    const h = summary.health || {}, s = h.sentinel || {};
+    const halted = !!s.halted;
+    const alive = !!s.alive && !halted;
     bar.className = 'trust-bar ' + (halted ? 'bad' : alive ? 'safe' : 'warn');
-    $('trust-text').textContent = halted ? 'THOR · HALTED — the Sentinel stopped the line (a governor failed)'
-      : alive ? 'THOR · live — governance up, the line is moving' : 'THOR · governance degraded';
-    $('trust-detail').textContent = (h.self_audit_meta_trust != null ? 'meta-trust '+Math.round(h.self_audit_meta_trust*100)+'%' : '');
-    $('trust-uptime').textContent = 'ledger connected';
+    txt.textContent = halted ? 'THOR · HALTED — Sentinel stopped the line (a governor failed)'
+      : alive ? 'THOR · SAFE — governance up, the line is moving'
+      : 'THOR · governance degraded';
+    det.textContent = (h.self_audit_meta_trust != null) ? 'meta-trust ' + Math.round(h.self_audit_meta_trust * 100) + '%' : '';
   }
-  function renderDisconnected(){
-    $('trust-bar').className = 'trust-bar bad';
+  function renderDisconnected() {
+    const bar = $('trust-bar');
+    bar.className = 'trust-bar bad';
     $('trust-text').textContent = 'THOR · DISCONNECTED — data may be stale; signing disabled';
-    $('trust-detail').textContent=''; $('trust-uptime').textContent=''; live('offline');
+    $('trust-detail').textContent = '';
+    $('live-text').textContent = 'offline';
+    $('health-text').textContent = 'Cannot reach the control plane';
+    $('health-bar').style.background = 'var(--bad)';
   }
 
-  function renderStats(summary, cards, costData, findings){
-    $('st-pending').textContent = cards.length;
-    $('st-pending-sub').textContent = cards.length ? 'in the Decide queue' : 'nothing waiting';
-    const h = summary.health || {}; const alive = h.sentinel && h.sentinel.alive && !(h.sentinel.halted);
-    const gov = $('st-gov'); gov.textContent = (h.sentinel && h.sentinel.halted) ? 'HALT' : alive ? 'up' : 'down';
-    gov.className = 'stat ' + (alive ? 'ok' : 'bad');
-    $('st-gov-sub').textContent = (h.sentinel ? (h.sentinel.alarms||0)+' alarms · ' : '') + 'sentinel + self-audit';
-    const mt = h.self_audit_meta_trust;
-    $('st-trust').textContent = mt != null ? Math.round(mt*100)+'%' : '—';
-    const sp = $('st-spend'); sp.textContent = (costData.total_spent||0).toLocaleString();
-    sp.className = 'stat ' + (costData.over_cap ? 'bad' : costData.alert ? 'warn' : '');
-    $('st-spend-sub').textContent = costData.cap ? 'of '+costData.cap.toLocaleString()+(costData.alert?' · ALERT':'') : 'tokens · no cap set';
+  // ── ENTERPRISE PANELS (the moat) ──
+  function renderEnterprise(health, lies, costData) {
+    // 1) System meta-trust
+    const mt = health.self_audit_meta_trust;
+    const trustEl = $('ent-trust');
+    trustEl.textContent = (mt != null) ? Math.round(mt * 100) + '%' : '—';
+    trustEl.className = 'stat-n ' + (mt == null ? '' : mt >= 0.8 ? 'ok' : mt >= 0.5 ? 'warn' : 'bad');
+    const tChip = $('ent-trust-chip');
+    tChip.textContent = (mt != null) ? Math.round(mt * 100) + '%' : '—';
+    tChip.className = 'chip ' + (mt == null ? 'c-neutral' : mt >= 0.8 ? 'c-ok' : mt >= 0.5 ? 'c-warn' : 'c-bad');
+
+    // 2) Lies caught (honesty meter)
+    const total = lies.total || 0;
+    const lEl = $('ent-lies');
+    lEl.textContent = total;
+    lEl.className = 'stat-n ' + (total > 0 ? 'bad' : 'ok');
+    const lChip = $('ent-lies-chip');
+    lChip.textContent = total > 0 ? 'DISHONESTY' : 'honesty';
+    lChip.className = 'chip ' + (total > 0 ? 'c-bad' : 'c-ok');
+    const cs = Object.keys(lies.by_container || {});
+    $('ent-lies-sub').textContent = total === 0 ? 'claim-vs-reality lie detector'
+      : total + ' lie' + (total > 1 ? 's' : '') + ' in ' + cs.length + ' container' + (cs.length > 1 ? 's' : '');
+    const recent = lies.recent || [];
+    $('ent-lies-detail').innerHTML = recent.length
+      ? recent.map(l =>
+          '<div class="lie-row"><span class="lie-room">' + esc(l.container) + '</span>' +
+          '<span class="ink2">' + esc(l.feature_id || '') + '</span>' +
+          '<span class="ink3">' + esc((l.signals || [])[0] || '') + '</span></div>').join('')
+      : '<div class="f11 ink3" style="margin-top:4px">No lies caught — every claim has matched reality.</div>';
+
+    // 3) Token spend
+    const spent = costData.total_spent || 0;
+    const spEl = $('ent-spend');
+    spEl.textContent = spent.toLocaleString();
+    spEl.className = 'stat-n ' + (costData.over_cap ? 'bad' : costData.alert ? 'warn' : '');
+    $('ent-spend-sub').textContent = costData.cap ? 'of ' + costData.cap.toLocaleString() + (costData.alert ? ' · ALERT' : '') : 'tokens · no cap set';
+    const spChip = $('ent-spend-chip');
+    spChip.textContent = costData.over_cap ? 'OVER CAP' : costData.alert ? 'ALERT' : costData.cap ? 'within cap' : 'no cap';
+    spChip.className = 'chip ' + (costData.over_cap ? 'c-bad' : costData.alert ? 'c-warn' : costData.cap ? 'c-ok' : 'c-neutral');
+    const per = (costData.per_feature || []).filter(f => (f.spent || 0) > 0).slice(0, 4);
+    $('ent-spend-detail').innerHTML = per.length
+      ? per.map(f => '<div class="lie-row" style="border-top:1px dashed var(--line)"><span class="mono ink2">' + esc(f.feature_id) + '</span>' +
+          '<span class="ink3" style="margin-left:auto">' + (f.spent || 0).toLocaleString() + '</span></div>').join('')
+      : '<div class="f11 ink3" style="margin-top:4px">No tokens spent yet.</div>';
+
+    // 4) Self-Audit (read-only eyes)
+    const sa = health.self_audit || {};
+    $('ent-sa-model').textContent = sa.model || 'deterministic-v1';
+    const zeroFrontier = (sa.frontier_calls === 0);
+    $('ent-sa-sub').textContent = (sa.frontier_calls != null)
+      ? (zeroFrontier ? '$0 · zero frontier calls' : sa.frontier_calls + ' frontier calls')
+      : 'the read-only eyes';
+    const saChip = $('ent-sa-chip');
+    saChip.textContent = zeroFrontier ? '$0' : 'read-only';
+    saChip.className = 'chip ' + (zeroFrontier ? 'c-ok' : 'c-info');
   }
 
-  function renderLies(lies){
-    const total = lies.total||0, el = $('st-lies');
-    el.textContent = total; el.className = 'stat ' + (total>0?'bad':'ok');
-    const cs = Object.keys(lies.by_container||{});
-    $('st-lies-sub').textContent = total===0 ? 'honesty enforced'
-      : total+' lie'+(total>1?'s':'')+' in '+cs.length+' container'+(cs.length>1?'s':'');
-    const recent = (lies.recent||[]);
-    $('lies-detail').innerHTML = recent.length
-      ? '<div class="f11 ink3 mono" style="margin-bottom:4px">CAUGHT LIES (claim vs reality):</div>' + recent.map(l =>
-          '<div class="lie-row"><span class="lie-room">'+esc(l.container)+'</span><span class="ink2">'+esc(l.feature_id||'')+'</span>'+
-          '<span class="ink3">'+esc((l.signals||[])[0]||'')+'</span></div>').join('')
-      : '<div class="f11 ink3">No lies caught — every claim has matched reality.</div>';
+  // ── HERO + PROJECT HEALTH (mapped from cards / audit feed / findings / health) ──
+  function renderSummary(cards, feed, findings, health) {
+    const pending = cards.length;
+    $('stat-pending').textContent = pending;
+    $('stat-pending-sub').textContent = pending > 0 ? 'tap Decide to review' : 'nothing waiting';
+
+    // approved / rejected from operator-action events in the ledger
+    let approved = 0, rejected = 0;
+    for (const e of feed) {
+      const t = (e.event_type || '');
+      if (/approve/i.test(t)) approved++;
+      else if (/reject/i.test(t)) rejected++;
+    }
+    $('stat-approved').textContent = approved;
+    $('stat-rejected').textContent = rejected;
+    $('stat-total').textContent = approved + rejected;
+    $('badge-decide').textContent = pending;
+    $('home-decide-chip').textContent = pending + ' pending';
+
+    // project health
+    $('stat-risks').textContent = 0;
+    $('stat-risks-sub').textContent = 'open risks';
+    $('stat-findings').textContent = findings.length;
+    $('stat-findings-sub').textContent = findings.length ? 'needs attention' : 'all clear';
+    $('session-chip').textContent = 'ledger · ' + feed.length + ' events';
+
+    // system health bar
+    const s = (health.sentinel || {});
+    const halted = !!s.halted, alive = !!s.alive && !halted;
+    const bar = $('health-bar'), htext = $('health-text');
+    bar.style.background = halted ? 'var(--bad)' : alive ? 'var(--ok)' : 'var(--warn)';
+    htext.textContent = halted ? 'HALTED — Sentinel stopped the line'
+      : alive ? 'Sentinel watching · ' + (s.alarms || 0) + ' alarms · fail-closed halt authority'
+      : 'Governance degraded';
+
+    // governance bottom card + badge
+    const gBadge = $('gov-badge');
+    gBadge.textContent = halted ? 'HALT' : alive ? 'up' : 'down';
+    gBadge.className = 'chip ' + (halted ? 'c-bad' : alive ? 'c-ok' : 'c-warn');
+    renderGovPanel(health);
   }
 
-  // FLOW A pipeline (live counts from the kanban)
-  const STAGES = [['backlog','Backlog'],['ready','Ready'],['building','Build'],['in_qa','QA'],['awaiting_signature','Sign'],['done','Done']];
-  function renderPipeline(columns){
-    const parts = [];
-    STAGES.forEach(([k,lbl],i) => {
-      const n = (columns[k]||[]).length;
-      parts.push('<div class="pipe-step'+(n?' has':'')+'"><div class="ps-lbl">'+lbl+'</div><div class="ps-val">'+n+'</div></div>');
-      if (i < STAGES.length-1) parts.push('<div class="pipe-arrow">→</div>');
-    });
-    $('pipe').innerHTML = parts.join('');
+  function renderGovPanel(health) {
+    const s = health.sentinel || {}, sa = health.self_audit || {};
+    const mt = health.self_audit_meta_trust;
+    const halted = !!s.halted, alive = !!s.alive && !halted;
+    const dot = c => '<div class="hrow-dot" style="background:var(--' + c + ')"></div>';
+    $('gov-panel').innerHTML =
+      '<div class="hrow">' + dot(halted ? 'bad' : 'ok') + '<div class="hrow-name">Sentinel</div><span class="chip ' + (halted ? 'c-bad' : 'c-ok') + '">' + (halted ? 'HALTED' : 'watching') + '</span></div>' +
+      '<div class="hrow">' + dot('ok') + '<div class="hrow-name">Self-Audit model</div><span class="chip c-ok">' + esc(sa.model || 'deterministic-v1') + '</span></div>' +
+      '<div class="hrow">' + dot(mt == null ? 'ink3' : mt >= 0.8 ? 'ok' : mt >= 0.5 ? 'warn' : 'bad') + '<div class="hrow-name">Meta-trust</div><span class="chip ' + (mt == null ? 'c-neutral' : mt >= 0.8 ? 'c-ok' : mt >= 0.5 ? 'c-warn' : 'c-bad') + '">' + (mt != null ? Math.round(mt * 100) + '%' : '—') + '</span></div>' +
+      '<div class="f11 mono ink3 mt8">Source: the Manager\'s ledger — not a cook\'s claim</div>';
   }
 
-  const COL = [['backlog','queued','Backlog'],['ready','queued','Ready'],['building','building','Building'],
-               ['in_qa','planning','In QA'],['awaiting_signature','planning','Awaiting sig'],['done','done','Done']];
-  function renderKanban(columns){
-    let total = 0;
-    $('kanban').innerHTML = COL.map(([key,dot,label]) => {
-      const items = columns[key]||[]; total += items.length;
-      const body = items.length ? items.map(f =>
-        '<div class="kb-card"><div class="kb-card-top"><span class="kb-badge feature">'+esc(f.feature_id)+'</span>'+
-        (f.priority!=null?'<span class="kb-priority p'+Math.min(2,f.priority)+'">P'+esc(f.priority)+'</span>':'')+'</div>'+
-        '<div class="kb-title">'+esc(f.title||f.feature_id)+'</div></div>').join('')
-        : '<div class="f11 ink3" style="padding:4px 2px">—</div>';
-      return '<div class="kb-col"><div class="kb-col-header"><span class="kb-col-dot '+dot+'"></span>'+
-        '<span class="kb-col-label">'+label+'</span><span class="kb-col-count">'+items.length+'</span></div>'+
-        '<div class="kb-col-body">'+body+'</div></div>';
+  // ── LIVE STATUS ROW (mapped) ──
+  function renderLiveStatus(rooms, health, feed) {
+    const buildRooms = rooms.filter(r => /build/i.test(r.stage || ''));
+    const cs = $('claude-state'), cd = $('claude-doing');
+    if (buildRooms.length) {
+      cs.textContent = 'building'; cs.className = 'chip c-brand';
+      cd.textContent = buildRooms.map(r => r.feature_id).join(', ') + ' · ' + buildRooms.length + ' room' + (buildRooms.length > 1 ? 's' : '');
+    } else {
+      cs.textContent = 'idle'; cs.className = 'chip c-neutral';
+      cd.textContent = 'No build rooms running';
+    }
+    // CTO — static planner chip (set in markup); leave as-is.
+    // Watchdog — Sentinel
+    const s = health.sentinel || {};
+    const halted = !!s.halted;
+    const ws = $('wd-state'), wd = $('wd-doing');
+    ws.textContent = halted ? 'HALTED' : 'watching';
+    ws.className = 'chip ' + (halted ? 'c-bad' : 'c-ok');
+    wd.textContent = halted ? 'Line halted — a governor failed' : 'Guarding · ' + (s.alarms || 0) + ' alarms';
+  }
+
+  // ── PROJECT PULSE (counts from the audit feed) ──
+  function pulseTile(name, stateText, chipClass, extra) {
+    return '<div style="padding:10px 12px;background:var(--s2);border:1px solid var(--line);border-radius:6px">' +
+      '<div class="row g8" style="justify-content:space-between"><span class="f11 ink3" style="text-transform:uppercase;letter-spacing:.06em">' + esc(name) + '</span><span class="chip ' + chipClass + '">' + esc(stateText) + '</span></div>' +
+      (extra ? '<div class="f12 ink2" style="margin-top:4px">' + esc(extra) + '</div>' : '') +
+      '</div>';
+  }
+  function renderProjectPulse(feed) {
+    let verdictDone = 0, verdictEscalate = 0, divergence = 0, provisioned = 0, merged = 0, lastMerge = null;
+    for (const e of feed) {
+      const t = e.event_type || '';
+      if (t === 'verdict.computed') {
+        // escalate vs done — best-effort by feature presence; treat all computed as "done" baseline
+        verdictDone++;
+      }
+      if (/escalat/i.test(t)) verdictEscalate++;
+      if (/divergence\.detected/i.test(t)) divergence++;
+      if (/room\.provisioned/i.test(t)) provisioned++;
+      if (/feature\.merged|\.merged/i.test(t)) { merged++; lastMerge = e; }
+    }
+    const grid = $('pulse-grid'); if (!grid) return;
+    grid.innerHTML = [
+      pulseTile('Verdicts', verdictDone + ' computed', verdictDone ? 'c-ok' : 'c-neutral', verdictEscalate ? verdictEscalate + ' escalated' : 'reality-checked'),
+      pulseTile('Divergence', divergence + ' detected', divergence > 0 ? 'c-bad' : 'c-ok', divergence > 0 ? 'claim ≠ reality' : 'claims match'),
+      pulseTile('Rooms', provisioned + ' provisioned', provisioned ? 'c-info' : 'c-neutral', 'sealed Docker rooms'),
+      pulseTile('Merged', merged + ' features', merged ? 'c-ok' : 'c-neutral', 'signed to main'),
+    ].join('');
+    const commitEl = $('pulse-commit');
+    if (commitEl) commitEl.textContent = lastMerge ? ('#' + lastMerge.seq + ' ' + (lastMerge.feature_id || '') + ' · ' + lastMerge.event_type) : '—';
+    const refreshChip = $('pulse-refresh');
+    if (refreshChip) refreshChip.textContent = 'updated ' + new Date().toLocaleTimeString();
+  }
+
+  // ── FEATURE GRID (Done / In-progress / Stub from kanban) ──
+  function renderFeatureGrid(cols) {
+    const ids = arr => (arr || []).map(f => f.feature_id);
+    const done = ids(cols.done);
+    const inProgress = [].concat(ids(cols.building), ids(cols.in_qa), ids(cols.awaiting_signature));
+    const stub = [].concat(ids(cols.backlog), ids(cols.ready));
+    const total = done.length + inProgress.length + stub.length;
+    $('fg-total').textContent = total + ' features';
+    $('fg-updated').textContent = 'updated ' + new Date().toLocaleTimeString();
+    $('fg-done-count').textContent = done.length;
+    $('fg-ip-count').textContent = inProgress.length;
+    $('fg-stub-count').textContent = stub.length;
+    $('fg-done-list').textContent = done.length ? done.join(', ') : '—';
+    $('fg-ip-list').textContent = inProgress.length ? inProgress.join(', ') : '—';
+    $('fg-stub-list').textContent = stub.length ? stub.join(', ') : '—';
+  }
+
+  // ── CTO DECISIONS (action.decided events: allow/deny/guide) ──
+  function renderCtoDecisions(feed) {
+    const panel = $('cto-decisions-panel'), chip = $('cto-decisions-chip');
+    const decisions = feed.filter(e => /action\.decided|leash\.|\.decided/i.test(e.event_type || ''));
+    chip.textContent = decisions.length;
+    chip.className = decisions.length > 0 ? 'chip c-ok' : 'chip c-neutral';
+    if (!decisions.length) { panel.innerHTML = '<div class="f13 ink2">No planner decisions yet this session. Allow / deny / guide events appear here.</div>'; return; }
+    const colorOf = t => /deny|denied|block/i.test(t) ? 'var(--bad)' : /guide|guidance/i.test(t) ? 'var(--warn)' : 'var(--ok)';
+    const iconOf = t => /deny|denied|block/i.test(t) ? 'X' : /guide|guidance/i.test(t) ? '!' : '+';
+    panel.innerHTML = decisions.slice().reverse().slice(0, 20).map(d => {
+      const color = colorOf(d.event_type), icon = iconOf(d.event_type);
+      return '<div style="padding:6px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:start">' +
+        '<div style="width:18px;height:18px;border-radius:50%;background:' + color + ';color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">' + icon + '</div>' +
+        '<div style="flex:1;min-width:0">' +
+          '<div class="f12 w6">' + esc(d.event_type) + (d.feature_id ? ' · ' + esc(d.feature_id) : '') + '</div>' +
+          '<div class="f11 ink3">' + esc(d.actor || '') + '</div>' +
+          '<div class="f11 mono ink3">#' + d.seq + ' · ' + relTime(d.ts) + '</div>' +
+        '</div></div>';
     }).join('');
-    $('kb-count').textContent = total+' features';
   }
 
-  function renderRooms(active){
-    $('rooms-count').textContent = active.length;
-    $('rooms').innerHTML = active.length ? active.map(r =>
-      '<div class="editing-strip"><span class="pulse"></span><span class="lbl">'+esc(r.stage)+'</span>'+
-      '<span class="file">'+esc(r.feature_id)+' · '+esc(r.room_id)+'</span>'+
-      '<span class="when">'+esc(r.status)+'</span></div>').join('')
-      : '<div class="kb-empty"><div class="icon">○</div><p>No rooms running — a sealed Docker room is provisioned when a feature is built.</p></div>';
-  }
-  function renderCost(c){
-    const pct = c.cap ? Math.min(100, Math.round((c.total_spent/c.cap)*100)) : 0;
-    const cls = c.over_cap ? 'bad' : c.alert ? 'warn' : 'ok';
-    $('cost').innerHTML =
-      '<div class="metrics-strip" style="border:none;margin:0;padding:6px 2px">'+
-        '<div class="metric"><span class="m-lbl">Tokens spent</span><span class="m-val '+(c.alert?'alert':'')+'">'+(c.total_spent||0).toLocaleString()+(c.cap?' / '+c.cap.toLocaleString():'')+'</span></div>'+
-        '<div class="metric"><span class="m-lbl">Estimated</span><span class="m-val">'+(c.total_est||0).toLocaleString()+'</span></div>'+
-        '<div class="metric"><span class="m-lbl">Features</span><span class="m-val">'+(c.per_feature?c.per_feature.length:0)+'</span></div>'+
-      '</div>'+
-      (c.cap ? '<div class="build-spot-bar" style="margin-top:6px"><div class="build-spot-fill" style="width:'+pct+'%;background:var(--'+cls+')"></div></div>' : '');
-  }
-
-  function renderGovernance(summary){
-    const h = summary.health || {}, s = h.sentinel || {}, sa = h.self_audit || {};
-    const sentDot = s.halted ? 'bad' : 'ok', sentTxt = s.halted ? 'HALTED' : 'watching';
-    const mt = h.self_audit_meta_trust;
-    const cost = (sa.frontier_calls != null) ? (sa.frontier_calls===0 ? '$0 · zero frontier calls' : sa.frontier_calls+' frontier calls') : 'local model';
-    $('gov').innerHTML =
-      '<div class="gov-tile"><div class="gt-top"><span class="gdot '+sentDot+'"></span>Sentinel</div>'+
-        '<div class="gt-val">'+sentTxt+'</div><div class="gt-sub">'+(s.alarms||0)+' alarms · fail-closed halt authority</div></div>'+
-      '<div class="gov-tile"><div class="gt-top"><span class="gdot ok"></span>Self-Audit model</div>'+
-        '<div class="gt-val">'+esc(sa.model||'deterministic-v1')+'</div><div class="gt-sub">'+cost+' · read-only eyes</div></div>'+
-      '<div class="gov-tile"><div class="gt-top"><span class="gdot '+(mt>=0.8?'ok':mt>=0.5?'warn':'bad')+'"></span>System meta-trust</div>'+
-        '<div class="gt-val">'+(mt!=null?Math.round(mt*100)+'%':'—')+'</div><div class="gt-sub">system reliability, not per-agent trust</div></div>'+
-      '<div class="gov-tile"><div class="gt-top"><span class="gdot '+(($('st-lies').textContent!=='0')?'bad':'ok')+'"></span>Honesty</div>'+
-        '<div class="gt-val">'+$('st-lies').textContent+' caught</div><div class="gt-sub">claim-vs-reality lie detector</div></div>';
-  }
-
+  // ── APPROVAL QUEUE (cards → acard with a WORKING Sign button) ──
   const CARD_META = {
-    merge:   { sev:'bad',  tag:'merge to main',  title:f=>'Approve the merge — '+f },
-    qa_fail: { sev:'warn', tag:'re-work ticket', title:f=>'Authorize re-work — '+f },
-    plan:    { sev:'ok',   tag:'begin building', title:f=>'Approve the plan — '+f },
+    merge:   { sev:'bad',  tier:3, tag:'merge to main',  title:f=>'Approve the merge — ' + f },
+    qa_fail: { sev:'warn', tier:2, tag:'re-work ticket', title:f=>'Authorize re-work — ' + f },
+    plan:    { sev:'ok',   tier:1, tag:'begin building', title:f=>'Approve the plan — ' + f },
   };
-  function renderCards(cards){
-    $('cards-count').textContent = cards.length;
-    if (!cards.length){ $('cards').innerHTML = '<div class="panel-empty"><div class="icon">✓</div><h3>Nothing waiting</h3><p>The cooks are working within scope. Cards appear here when your signature is needed.</p></div>'; return; }
-    $('cards').innerHTML = cards.map(card => {
-      const m = CARD_META[card.type] || { sev:'info', tag:esc(card.type), title:f=>(card.type+' — '+f) };
-      return '<div class="acard '+m.sev+'">'+
-        '<div class="acard-head"><span class="acard-tag '+m.sev+'">'+m.tag+'</span><span class="acard-time">'+esc(card.status)+'</span></div>'+
-        '<div class="acard-title">'+esc(m.title(card.feature_id))+'</div>'+
-        '<div class="acard-desc">'+esc(card.legible_reason)+'</div>'+
-        '<div class="acard-facts">'+
-          '<div><div class="acard-fact-lbl">Feature</div><div class="acard-fact-val">'+esc(card.feature_id)+'</div></div>'+
-          '<div><div class="acard-fact-lbl">Card</div><div class="acard-fact-val">'+esc(card.card_id)+'</div></div>'+
-        '</div>'+
-        '<div class="acard-actions"><button class="btn btn-ok" onclick="thorSign(\''+esc(card.card_id)+'\')">Sign</button>'+
-        '<span class="f11 ink3">Ed25519 — signed in your browser with your key (it never leaves this device)</span></div>'+
-        '</div>';
+  function renderQueue(cards, targetId) {
+    const el = $(targetId);
+    if (!cards || cards.length === 0) {
+      el.innerHTML = '<div class="empty"><div class="empty-ico">✓</div><div class="empty-title">Nothing waiting</div><div class="empty-body">The cooks are working within scope. Cards appear here when your signature is needed.</div><button class="btn btn-brand mt12" onclick="openM(\'m-task\')">+ New task</button></div>';
+      return;
+    }
+    el.innerHTML = cards.map(card => {
+      const m = CARD_META[card.type] || { sev:'info', tier:2, tag:esc(card.type), title:f=>(card.type + ' — ' + f) };
+      const tierClass = 't' + (m.tier || 2);
+      const chipClass = m.sev === 'bad' ? 'c-bad' : m.sev === 'warn' ? 'c-warn' : m.sev === 'ok' ? 'c-ok' : 'c-info';
+      const riskLabel = m.tier === 3 ? 'high' : m.tier === 2 ? 'medium' : 'low';
+      return '<div class="acard ' + tierClass + '" data-id="' + esc(card.card_id) + '">' +
+        '<div class="row g8 mb12"><span class="tier-dot" aria-hidden="true"></span><span class="chip ' + chipClass + '">' + esc(m.tag) + '</span><span class="f11 mono ink3">' + esc(card.status || '') + '</span></div>' +
+        '<div class="a-title">' + esc(m.title(card.feature_id)) + '</div>' +
+        '<div class="a-plain">' + esc(card.legible_reason || '') + '</div>' +
+        '<div class="a-facts">' +
+          '<span class="a-fact a-fact-risk a-fact-' + riskLabel + '"><span class="a-fact-dot"></span>' + riskLabel + ' risk</span>' +
+          '<span class="a-fact">Feature ' + esc(card.feature_id) + '</span>' +
+          '<span class="a-fact">Card ' + esc(card.card_id) + '</span>' +
+        '</div>' +
+        '<div class="a-actions">' +
+          '<button class="btn btn-ok" onclick="thorSign(\'' + esc(card.card_id) + '\')">Sign</button>' +
+          '<span class="f11 ink3">Ed25519 — signed in your browser with your key (it never leaves this device)</span>' +
+        '</div></div>';
     }).join('');
   }
 
-  function renderFeed(events){
-    const kind = t => /alarm|halt|deny|denied|reject|fail|tamper|dishonesty/i.test(t) ? ['fd-alarm','!']
-      : /verdict|approve|merged|done|sign/i.test(t) ? ['fd-ok','+']
-      : /warn|escalat|divergence|qa\./i.test(t) ? ['fd-warn','▲'] : ['fd-info','·'];
-    const rows = events.slice().reverse().slice(0, 60);
-    $('feed-count').textContent = (events.length)+' EVENTS';
-    $('audit').innerHTML = rows.length ? rows.map(e => {
-      const [icon, glyph] = kind(e.event_type);
-      return '<div class="feed-row"><div class="feed-icon '+icon+'">'+glyph+'</div>'+
-        '<div class="feed-body"><span class="feed-kind">#'+e.seq+' '+esc(e.event_type)+'</span>'+
-        '<span class="feed-txt">'+esc(e.actor)+(e.feature_id?' · '+esc(e.feature_id):'')+'</span></div>'+
-        '<span class="feed-time">'+relTime(e.ts)+'</span></div>';
-    }).join('') : '<div class="activity-empty">no events yet</div>';
+  // ── ACTIVITY FEED (audit ledger) ──
+  function feedKind(t) {
+    return /alarm|halt|deny|denied|reject|fail|tamper|dishonesty/i.test(t) ? 'alarm'
+      : /verdict|approve|merged|done|sign/i.test(t) ? 'ok'
+      : /warn|escalat|divergence|qa/i.test(t) ? 'warn' : 'info';
+  }
+  function renderActivity(events) {
+    const ordered = events.slice().reverse();
+    const feedHtml = arr => arr.map(e => {
+      const type = feedKind(e.event_type || '');
+      const txt = esc(e.actor || '') + (e.feature_id ? ' · ' + esc(e.feature_id) : '');
+      return '<div class="feed-row"><div class="feed-dot fd-' + type + '"></div><div><div class="feed-kind">#' + e.seq + ' ' + esc(e.event_type) + '</div><div class="feed-txt">' + txt + '</div><div class="feed-time">' + relTime(e.ts) + '</div></div></div>';
+    }).join('');
+    const hf = $('home-feed'); if (hf) hf.innerHTML = ordered.length > 0 ? feedHtml(ordered.slice(0, 5)) : '<div class="empty">no activity</div>';
+    const ff = $('full-feed'); if (ff) ff.innerHTML = ordered.length > 0 ? feedHtml(ordered.slice(0, 50)) : '<div class="empty">no activity</div>';
+    const fc = $('feed-count'); if (fc) fc.textContent = 'live · ' + events.length + ' events';
+
+    // Activity logbook (mono rows)
+    const rows = $('activity-rows');
+    if (rows) {
+      rows.innerHTML = ordered.length === 0 ? '<div class="ink3">no entries yet</div>'
+        : ordered.slice(0, 100).map(e => {
+            const t = feedKind(e.event_type || '');
+            const color = t === 'alarm' ? 'var(--bad)' : t === 'ok' ? 'var(--ok)' : t === 'warn' ? 'var(--warn)' : 'var(--info)';
+            return '<div style="padding:4px 0;border-bottom:1px solid var(--s2)"><span class="ink3">#' + e.seq + '</span> <span style="color:' + color + ';font-weight:600">' + esc(e.event_type) + '</span> <span class="ink2">' + esc(e.actor || '') + (e.feature_id ? ' · ' + esc(e.feature_id) : '') + '</span> <span class="ink3">' + relTime(e.ts) + '</span></div>';
+          }).join('');
+    }
+    $('activity-count').textContent = events.length + ' entries';
+    $('activity-refresh').textContent = new Date().toLocaleTimeString();
   }
 
-  async function refreshAll(){
-    try{
-      const [summary, kb, rooms, cards, feed, costData, findings, lies] = await Promise.all([
-        get('/state/summary'), get('/kanban'), get('/rooms/live'),
-        get('/cards'), get('/audit/feed'), get('/cost'), get('/findings'), get('/lies'),
-      ]);
-      failCount = 0;
-      if (!summary.connected){ renderDisconnected(); return; }
-      const cardList = cards.cards || [], cols = kb.columns || {};
-      renderTrust(summary);
-      renderStats(summary, cardList, costData, findings.checker_findings || []);
-      renderLies(lies || {total:0, by_container:{}});
-      renderPipeline(cols);
-      renderKanban(cols);
-      renderRooms(rooms.active || []);
-      renderCost(costData);
-      renderGovernance(summary);
-      renderCards(cardList);
-      renderFeed(feed.events || []);
-      live('live · '+cardList.length+' pending');
-    } catch(e){
-      failCount++;
-      if (failCount >= 3) renderDisconnected(); else live('reconnecting…');
+  // ── WORK BOARD (kanban → Queued/Planning/Building/Done) + Tests chip ──
+  function renderWork(cols, feed) {
+    const tcard = f => '<div class="tcard"><div class="tcard-name">' + esc(f.feature_id) + '</div><div class="tcard-body">' + esc(f.title || f.feature_id) + '</div>' +
+      (f.priority != null ? '<span class="chip c-neutral">P' + esc(f.priority) + '</span>' : '') + '</div>';
+    const queued = [].concat(cols.backlog || [], cols.ready || []);
+    const planning = cols.in_qa || [];
+    const building = cols.building || [];
+    const done = cols.done || [];
+    const fill = (id, arr) => { const e = $('col-' + id); if (e) e.innerHTML = arr.length ? arr.map(tcard).join('') : '<div class="f12 ink3" style="padding:4px 2px">—</div>'; };
+    fill('q', queued); fill('p', planning); fill('b', building); fill('d', done);
+    $('cnt-q').textContent = queued.length; $('cnt-p').textContent = planning.length;
+    $('cnt-b').textContent = building.length; $('cnt-d').textContent = done.length;
+    // Tests chip — from last verdict in the feed
+    let lastVerdict = null;
+    for (let i = feed.length - 1; i >= 0; i--) { if (/verdict/i.test(feed[i].event_type || '')) { lastVerdict = feed[i]; break; } }
+    const chip = $('test-chip'), detail = $('test-detail'), tfill = $('test-fill');
+    if (lastVerdict) {
+      const pass = /done|computed/i.test(lastVerdict.event_type) && !/fail|escalat/i.test(lastVerdict.event_type);
+      chip.textContent = pass ? 'passing' : 'attention'; chip.className = 'chip ' + (pass ? 'c-ok' : 'c-warn');
+      tfill.style.width = pass ? '100%' : '60%'; tfill.style.background = pass ? 'var(--ok)' : 'var(--warn)';
+      detail.textContent = 'last verdict: #' + lastVerdict.seq + ' ' + lastVerdict.event_type + (lastVerdict.feature_id ? ' · ' + lastVerdict.feature_id : '');
+    } else {
+      chip.textContent = '—'; chip.className = 'chip c-neutral';
+      tfill.style.width = '100%'; detail.textContent = 'no verdict yet';
     }
   }
+
+  // ── SECURITY PANEL (Sentinel surfaces, leash.denied, static triggers) ──
+  function renderSecurity(health, feed) {
+    const s = health.sentinel || {};
+    const halted = !!s.halted;
+    // Watched surfaces — static, all alive (or HALTED line-wide)
+    const surfaces = ['manager', 'selfaudit', 'dashboard'];
+    $('crawler-panel').innerHTML = surfaces.map(name =>
+      '<div class="hrow"><div class="hrow-dot" style="background:var(--' + (halted ? 'bad' : 'ok') + ')"></div><div class="hrow-name">' + esc(name) + '</div><span class="chip ' + (halted ? 'c-bad' : 'c-ok') + '">' + (halted ? 'halted' : 'alive') + '</span></div>'
+    ).join('') + '<div class="f11 mono ink3 mt8">' + (s.alarms || 0) + ' alarms · fail-closed halt authority</div>';
+    // CTO Violations — leash.denied events
+    const denied = feed.filter(e => /leash\.denied|deny|denied/i.test(e.event_type || ''));
+    const vc = $('violation-count');
+    vc.textContent = denied.length; vc.className = denied.length > 0 ? 'chip c-bad' : 'chip c-ok';
+    $('violation-panel').innerHTML = denied.length === 0
+      ? '<div class="f13 ink2">No leash violations recorded. The planner is within scope.</div>'
+      : denied.slice().reverse().slice(0, 10).map(v =>
+          '<div style="padding:8px 0;border-bottom:1px solid var(--line)">' +
+          '<div class="f12 w6" style="color:var(--bad)">' + esc(v.event_type) + (v.feature_id ? ' · ' + esc(v.feature_id) : '') + '</div>' +
+          '<div class="f11 mono ink3">' + esc(v.actor || '') + ' · #' + v.seq + ' · ' + relTime(v.ts) + '</div></div>'
+        ).join('');
+    // Triggers — static
+    $('trigger-panel').innerHTML =
+      '<div class="hrow"><div class="hrow-dot" style="background:var(--ok)"></div><div class="hrow-name">Sentinel halt on critical-governor failure</div><span class="chip c-ok">active</span></div>' +
+      '<div class="hrow"><div class="hrow-dot" style="background:var(--ok)"></div><div class="hrow-name">Fail-closed on disconnect — refuse to sign against a stale picture</div><span class="chip c-ok">active</span></div>';
+  }
+
+  // ── SUBMIT TASK (POST /features) ──
+  window.submitTask = async function() {
+    const desc = $('t-desc').value.trim();
+    if (!desc) { toast('Describe the task', 'warn'); return; }
+    const advice = $('t-advice').value.trim();
+    const protect = $('t-protect').value.trim();
+    const priority = parseInt($('t-pri').value, 10) || 3;
+    const context = [advice ? 'CEO advice: ' + advice : '', protect ? 'Do not touch: ' + protect : ''].filter(Boolean).join('\n');
+    try {
+      const r = await post('/features', { title: desc.slice(0, 120), context, priority });
+      toast('Task created — ' + (r.feature_id || 'queued') + ' · it enters the kanban backlog', 'ok');
+      closeM('m-task'); $('t-desc').value = ''; $('t-advice').value = ''; $('t-protect').value = '';
+      refreshAll();
+    } catch (e) { toast('Failed: ' + e.message, 'bad'); }
+  };
+
+  // ── MAIN POLLING (one refreshAll, Promise.all, 3-fail disconnect) ──
+  async function refreshAll() {
+    try {
+      const [summary, kb, rooms, cardsRes, feedRes, costData, findingsRes, lies, health] = await Promise.all([
+        get('/state/summary'), get('/kanban'), get('/rooms/live'),
+        get('/cards'), get('/audit/feed'), get('/cost'),
+        get('/findings'), get('/lies'), get('/health/system'),
+      ]);
+      failCount = 0;
+      if (summary.connected === false) { renderDisconnected(); return; }
+      const cards = cardsRes.cards || [];
+      const cols = kb.columns || {};
+      const feed = feedRes.events || [];
+      const findings = findingsRes.checker_findings || [];
+      const activeRooms = rooms.active || [];
+      const liesData = lies || { total:0, by_container:{}, recent:[] };
+
+      // use /health/system as the authoritative health (summary.health mirrors it)
+      const h = health || summary.health || {};
+
+      renderTrust({ health: h });
+      renderEnterprise(h, liesData, costData);
+      renderSummary(cards, feed, findings, h);
+      renderLiveStatus(activeRooms, h, feed);
+      renderProjectPulse(feed);
+      renderFeatureGrid(cols);
+      renderCtoDecisions(feed);
+      renderQueue(cards, 'decide-queue');
+      renderQueue(cards.slice(0, 2), 'home-queue');
+      renderActivity(feed);
+      renderWork(cols, feed);
+      renderSecurity(h, feed);
+
+      $('live-text').textContent = 'live · ' + cards.length + ' pending';
+    } catch (e) {
+      failCount++;
+      if (failCount >= 3) { renderDisconnected(); }
+      else { $('live-text').textContent = 'reconnecting...'; }
+    }
+  }
+
   refreshAll();
   setInterval(refreshAll, POLL_MS);
   window.refreshAll = refreshAll;
@@ -346,7 +956,7 @@
       const r = await (await fetch(location.origin + '/approve', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ card_id: cardId, signature: sig, signer_pub: pub, nonce: ch.nonce }) })).json();
-      if (r.verified) { if (window.refreshAll) window.refreshAll(); }
+      if (r.verified) { if (window.toast) window.toast('Signed — ' + cardId, 'ok'); if (window.refreshAll) window.refreshAll(); }
       else alert('Signature rejected: ' + (r.reason || 'unknown'));
     } catch (e) { alert('Signing failed: ' + e.message); }
   };
