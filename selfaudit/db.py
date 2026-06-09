@@ -8,9 +8,19 @@ hallucinating inspector can write wrong reports, but can never alter code/state/
 """
 from __future__ import annotations
 
-import psycopg
+import os
 
-RO_DSN = "postgresql://selfaudit:selfaudit@localhost:55432/thor"
+import psycopg
+from psycopg import sql
+
+from manager.pg import PG_DB, PG_HOST_PORT
+
+# Production-configurable (no hardcoded host/password). Full override via THOR_SELFAUDIT_DSN; otherwise
+# derive from the same Postgres the Manager uses (PG_HOST_PORT/PG_DB) with the read-only `selfaudit`
+# role + a configurable password. Defaults match the dev bootstrap, so make prove/qa are unchanged.
+SELFAUDIT_PASSWORD = os.environ.get("THOR_SELFAUDIT_PASSWORD", "selfaudit")
+RO_DSN = os.environ.get("THOR_SELFAUDIT_DSN") or \
+    f"postgresql://selfaudit:{SELFAUDIT_PASSWORD}@localhost:{PG_HOST_PORT}/{PG_DB}"
 
 _OWN_TABLES = """
 CREATE TABLE IF NOT EXISTS selfaudit_reports (
@@ -32,9 +42,12 @@ def setup(admin_conn) -> None:
     """Run as the DB owner (the Manager's connection): create the role + its tables + grants."""
     with admin_conn.cursor() as cur:
         cur.execute(_OWN_TABLES)
-        cur.execute(
-            "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='selfaudit') "
-            "THEN CREATE ROLE selfaudit LOGIN PASSWORD 'selfaudit'; END IF; END $$;")
+        # sql.Literal safely quotes the password into the DO-block body (a bind param cannot be typed
+        # inside a DO block → IndeterminateDatatype). Literal handles quoting/escaping (no injection).
+        cur.execute(sql.SQL(
+            "DO $do$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='selfaudit') "
+            "THEN CREATE ROLE selfaudit LOGIN PASSWORD {pw}; END IF; END $do$;"
+        ).format(pw=sql.Literal(SELFAUDIT_PASSWORD)))
         # READ everything (broad eyes) ...
         cur.execute("GRANT SELECT ON eventlog, rooms, cards, features, bugs TO selfaudit")
         # ... WRITE only its own tables (no hands anywhere else)
