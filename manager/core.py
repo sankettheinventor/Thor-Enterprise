@@ -325,11 +325,16 @@ class ThorManager:
 
     # ---- trusted-state derivations for the Coordinator (the actor supplies NONE of these) ----
     def _room_for_feature(self, feature_id: str, events: list[dict]) -> str | None:
-        rid = None
+        # The verdict is about the BUILD: target the build room (where the cook worked), not a QA/checker
+        # room that shares the feature_id — else the trusted claim is read against the wrong room.
+        build_rid = last_rid = None
         for e in events:
             if e["event_type"] == "room.provisioned" and e.get("feature_id") == feature_id:
-                rid = json.loads(e["payload"]).get("room_id")
-        return rid
+                p = json.loads(e["payload"])
+                last_rid = p.get("room_id")
+                if p.get("task_type") == "build":
+                    build_rid = p.get("room_id")
+        return build_rid or last_rid
 
     def _trusted_window(self, feature_id: str, events: list[dict]) -> tuple[int, int]:
         seqs = [e["seq"] for e in events if e.get("feature_id") == feature_id]
