@@ -22,7 +22,17 @@ def detect(claim: dict, changed_files: set[str], verifier_passed: bool,
     """`claim` is the agent's untrusted self-report: {files_touched:[...], tests_passed:bool}."""
     d = Divergence()
     if not claim:
-        return d   # no claim to compare — divergence only flags contradicted claims
+        # BUG-4 (fail CLOSED): an empty/missing claim means there is no self-report to check against
+        # reality. The fail-OPEN bug let this return a clean pass, silently disabling the lie-detector —
+        # so an all-probes-pass build could reach `done` with NO honesty check. A `done` ALWAYS requires
+        # the verifier (M1) green, so when the verifier is green we cannot certify honesty without a
+        # claim → flag it (the panel escalates to a human). An already-failing build (verifier red) stays
+        # not_done — it is no false-done, and escalating every incomplete build would be pure noise.
+        if verifier_passed:
+            d.signals.append("verifier is green but there is no claim to verify against reality — "
+                             "cannot certify honesty (fail-closed)")
+            d.found = True
+        return d
 
     claimed = set(claim.get("files_touched", []))
 
