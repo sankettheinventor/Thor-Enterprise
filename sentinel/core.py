@@ -22,8 +22,9 @@ class Component:
 
 
 class Sentinel:
-    def __init__(self, manager=None) -> None:
+    def __init__(self, manager=None, lifecycle=None) -> None:
         self.manager = manager
+        self._lifecycle = lifecycle    # label-based room killer (lazy real LifecycleController; injectable)
         self.components: dict[str, Component] = {}
         self.integrity = IntegrityCrawler()
         self.alarms: list[dict] = []
@@ -33,6 +34,13 @@ class Sentinel:
         self._maintenance: dict | None = None
         self.accepts_work = False
         self.halted = False            # C3: set on a systemic halt → the Manager blocks all new work
+
+    def _lc(self):
+        """The Docker-label room killer (reality, not DB state). Lazy so import needs no daemon."""
+        if self._lifecycle is None:
+            from wall.lifecycle import LifecycleController
+            self._lifecycle = LifecycleController()
+        return self._lifecycle
 
     def register(self, name: str, critical: bool, health_fn: Callable[[], dict]) -> None:
         self.components[name] = Component(name, critical, health_fn)
@@ -108,28 +116,77 @@ class Sentinel:
         if self.manager is not None:
             try:
                 self.manager._record("sentinel.halt", rec, actor="sentinel")
-            except Exception:  # noqa: BLE001
-                pass
+                rec["recorded"] = True
+            except Exception as e:  # noqa: BLE001 — the physical halt ALREADY happened; surface that
+                rec["recorded"] = False      # this halt is UNAUDITED rather than silently hiding it
+                rec["audit_error"] = str(e)
         return rec
 
     def _destroy_rooms(self, only: set[str] | None) -> list[str]:
-        """Physically destroy the working rooms in scope (all if only=None). Returns the ids killed."""
+        """Physically destroy the working rooms in scope (all if only=None). Returns the ids killed.
+
+        Fail-CLOSED throughout (C3 — a halt must ENFORCE, never silently no-op):
+          * FINDING-B: if the Manager state is unreadable, do NOT destroy nothing — alarm, then kill the
+            rooms straight from Docker labels (reality), so the halt still bites.
+          * FINDING-C: a `destroy_room` failure is NOT proof the room died — verify against Docker; a room
+            still alive after a halt is alarmed (never silently skipped as 'already gone')."""
         if self.manager is None:
             return []
         try:
             rooms = self.manager.state_summary()["rooms"]
-        except Exception:  # noqa: BLE001
-            return []
+            targets = [rid for rid, r in rooms.items()
+                       if r.get("status") == "working" and (only is None or rid in only)]
+        except Exception as e:  # noqa: BLE001 — FINDING-B
+            self.alarm("critical", f"halt: manager state unreadable ({e}) — "
+                                   f"killing rooms by Docker label instead (fail-closed)")
+            return self._kill_by_label(only)
+
         killed = []
-        for rid, r in rooms.items():
-            if r.get("status") != "working" or (only is not None and rid not in only):
-                continue
+        for rid in targets:
             try:
                 self.manager.destroy_room(rid)
+            except Exception as e:  # noqa: BLE001 — FINDING-C: do not assume 'already gone'
+                self.alarm("critical", f"halt: manager.destroy_room({rid}) failed ({e}); forcing kill")
+                self._force_kill(rid)
+            if self._still_alive(rid):
+                self.alarm("critical", f"halt: room {rid} is STILL ALIVE after halt — it did not die "
+                                       f"(fail-closed alarm; manual intervention needed)")
+            else:
                 killed.append(rid)
-            except Exception:  # noqa: BLE001 — already gone; the branch persists regardless
-                pass
         return killed
+
+    def _kill_by_label(self, only: set[str] | None) -> list[str]:
+        """Fail-closed fallback: destroy THOR rooms straight from Docker labels (reality) when Manager
+        state is unreadable. If Docker is also unreachable, alarm — the halt could not enforce."""
+        try:
+            rooms = self._lc().list_rooms()
+        except Exception as e:  # noqa: BLE001
+            self.alarm("critical", f"halt: cannot reach Docker to kill rooms ({e}) — HALT DID NOT ENFORCE")
+            return []
+        killed = []
+        for room in rooms:
+            rid = room.get("room_id")
+            if not rid or (only is not None and rid not in only):
+                continue
+            res = self._lc().destroy(rid)
+            if res.get("status") in ("destroyed", "already_gone"):
+                killed.append(rid)
+            else:
+                self.alarm("critical", f"halt: label-kill of room {rid} failed ({res.get('reason')})")
+        return killed
+
+    def _force_kill(self, rid: str) -> None:
+        try:
+            self._lc().destroy(rid)
+        except Exception:  # noqa: BLE001 — _still_alive() below is the authority on whether it worked
+            pass
+
+    def _still_alive(self, rid: str) -> bool:
+        """True only if Docker POSITIVELY confirms the room container is still running."""
+        try:
+            return bool(self._lc().health(rid).alive)
+        except Exception:  # noqa: BLE001 — cannot reach Docker to confirm; we already alarmed elsewhere
+            return False
 
     # ---- 10.5 Canary verdicts: a PASSING planted-failure means a BROKEN detector → halt (AC-2) ----
     def evaluate_canaries(self, canaries: list[dict]) -> dict:
