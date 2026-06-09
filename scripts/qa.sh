@@ -91,16 +91,13 @@ QA_DSN="postgresql://postgres:thor@${QA_PG}:${QA_PG_PORT_INTERNAL}/thor"
 log "-- running suite in the QA room (repo mounted READ-ONLY :ro) --"
 log "   THOR_PG_DSN=${QA_DSN}"
 set +e
-# NOTE on the docker.sock mount: the product couples Manager-import to a live Docker daemon
-# (wall/provisioner.py runs docker.from_env() at import — recorded as FINDING-A in the QA register), so
-# importing ThorManager for the ledger tests requires a reachable daemon. We mount the host socket to
-# satisfy that import. STATE isolation — the property that matters — is unaffected: the QA Postgres is a
-# SEPARATE container+volume, the conftest QA branch connects DIRECTLY (never calls pg.start), and
-# THOR_PG_NAME is pinned to the QA container so even an accidental pg.start() can never touch the dev DB.
+# No Docker socket is mounted — the room is fully sealed (repo read-only, its own Postgres only).
+# (FINDING-A is fixed: importing ThorManager no longer requires a Docker daemon, so the gated logic
+# tests need no socket. THOR_PG_NAME/VOLUME are pinned defensively so an accidental pg.start() could
+# never target the dev DB.)
 docker run --rm --name thor-qa-runner --label thor.qa=1 \
   --network "$QA_NET" \
   -v "${REPO}:/repo:ro" \
-  -v /var/run/docker.sock:/var/run/docker.sock \
   -w /repo \
   -e THOR_PG_DSN="$QA_DSN" \
   -e THOR_PG_NAME="$QA_PG" \

@@ -25,13 +25,26 @@ import docker
 from . import config, identity_stamper, mount_manager, network_enforcer
 from .lifecycle import LifecycleController
 
-client = docker.from_env()
+# FINDING-A: the Docker client is created LAZILY (on first provisioning), never at import. Importing
+# this module (and therefore ThorManager) must not require a running Docker daemon — only actually
+# provisioning/destroying a room does. _stamper is pure Ed25519 keygen, so it stays module-level.
+client = None
 _stamper = identity_stamper.IdentityStamper()
-_lifecycle = LifecycleController(client)
+_lifecycle = None
+
+
+def _ensure_client() -> "docker.DockerClient":
+    """Connect to Docker on first real use (fail here, when a room is actually needed — not at import)."""
+    global client, _lifecycle
+    if client is None:
+        client = docker.from_env()
+        _lifecycle = LifecycleController(client)
+    return client
 
 
 def build_image() -> str:
     """Build the room OCI image from wall/image/ (1.1 Image Builder, day-one single-arch)."""
+    _ensure_client()
     img, _ = client.images.build(path="wall/image", tag=config.ROOM_IMAGE, rm=True)
     return img.id
 
@@ -57,6 +70,7 @@ def provision_room(
 
     NOTE: this BUILDS and RUNS a container. It is invoked only when asked — never on import.
     """
+    _ensure_client()               # FINDING-A: connect to Docker now (on real use), not at import
     config.profile_for(task_type)  # validates task_type (FR-15)
     room_id = f"room-{uuid.uuid4().hex[:8]}"
 
@@ -133,6 +147,7 @@ def provision_room(
 
 def destroy_room(room_id: str, mount_plan: mount_manager.MountPlan | None = None) -> dict:
     """Tear down the container (FR-12); the branch in git persists, the container does not."""
+    _ensure_client()               # FINDING-A: lazy Docker connect (not at import)
     result = _lifecycle.destroy(room_id)
     if mount_plan is not None:
         mount_manager.cleanup(mount_plan)
