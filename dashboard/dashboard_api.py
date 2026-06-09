@@ -6,9 +6,11 @@ Run with:  uvicorn dashboard.dashboard_api:app --host 127.0.0.1 --port 7080
 """
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
+
+from thor_http_auth import require_token
 
 app = FastAPI(title="THOR DashboardAPI", version="0.1.0")
 _service = None   # set via dashboard.dashboard_api.bind(service) when the control plane boots
@@ -88,12 +90,12 @@ def health_system():
 
 
 @app.post("/features")
-def add_feature(f: FeatureIn):
+def add_feature(f: FeatureIn, _: None = Depends(require_token)):
     return {"feature_id": _service.add_feature(f.title, f.context, f.priority)}
 
 
 @app.post("/operator/register")
-def register_operator(k: OperatorKey):
+def register_operator(k: OperatorKey, _: None = Depends(require_token)):
     """Register an authorized signer (the CEO's operator key) — only registered keys may sign."""
     _service.manager.register_operator(k.signer_pub)
     return {"registered": True}
@@ -112,10 +114,10 @@ def challenge(card_id: str):
 
 
 @app.post("/approve")
-def approve(s: Sig):
+def approve(s: Sig, _: None = Depends(require_token)):
     return _service.approve(s.card_id, s.signature, s.signer_pub, s.nonce)
 
 
 @app.post("/reject")
-def reject(s: Sig):
+def reject(s: Sig, _: None = Depends(require_token)):
     return _service.reject(s.card_id, s.signature, s.signer_pub, s.reason)

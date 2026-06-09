@@ -12,3 +12,4 @@ coverage>=7.0          # coverage-of-diff for the fake-test detector (GovEngine 
 
 # dev / test (proving suite is written but NOT gated on — P7 / Rule 2)
 pytest>=8.0.0
+httpx>=0.27            # fastapi.testclient (HTTP-surface auth tests)

@@ -7,8 +7,10 @@ runs for real.)
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
+
+from thor_http_auth import require_token
 
 from . import db
 from .core import FailClosed, ThorManager
@@ -44,7 +46,7 @@ class EventReq(BaseModel):
 
 
 @app.post("/rooms/provision")
-def provision(req: ProvisionReq):
+def provision(req: ProvisionReq, _: None = Depends(require_token)):
     try:
         room = manager().provision_room(req.feature_id, req.task_type, network_mode=req.network_mode)
     except ValueError as e:
@@ -53,12 +55,12 @@ def provision(req: ProvisionReq):
 
 
 @app.post("/rooms/{room_id}/destroy")
-def destroy(room_id: str):
+def destroy(room_id: str, _: None = Depends(require_token)):
     return manager().destroy_room(room_id)
 
 
 @app.post("/events/append")
-def append_event(req: EventReq):
+def append_event(req: EventReq, _: None = Depends(require_token)):
     try:
         return manager()._record(req.event_type, req.payload, actor=req.actor,
                                  room_id=req.room_id, feature_id=req.feature_id, client_id=req.client_id)
