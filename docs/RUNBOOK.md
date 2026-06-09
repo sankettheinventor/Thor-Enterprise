@@ -9,7 +9,22 @@ later decision to make together — see `THOR-WIRING-MANUAL.md` Part D).
 From the repo root, inside the Python venv:
 
 ```bash
-python tools/start_thor.py
+make start        # = python tools/start_thor.py
+```
+
+See it work end to end (one real feature: plan → sealed-room build → QA → verdict → CEO-signed merge,
+with an out-of-scope write blocked, a lie caught, and a dead governor halted), then the booted
+dashboard reflecting it:
+
+```bash
+make demo
+```
+
+Reproduce the full proof from a clean state (the trust bar — all integration flows + module ACs over
+real Docker + Postgres):
+
+```bash
+make prove
 ```
 
 That cold-starts everything:
