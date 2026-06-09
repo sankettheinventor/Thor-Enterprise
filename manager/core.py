@@ -99,6 +99,8 @@ class ThorManager:
     # ---- 3.2 Lifecycle Coordinator (drives the Wall) ----
     def provision_room(self, feature_id: str, task_type: str = "build", branch: str | None = None,
                        network_mode: str = "sealed", **wall_kw) -> dict:
+        if self.sentinel is not None and getattr(self.sentinel, "halted", False):
+            raise RuntimeError("HALTED — the Sentinel is not accepting new work (a governor failed)")
         branch = branch or f"feature/{feature_id}"
         with self.conn.cursor() as cur:  # FR-20 one-branch-one-room
             cur.execute("SELECT room_id FROM rooms WHERE branch=%s AND status='working'", (branch,))

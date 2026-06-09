@@ -145,10 +145,27 @@ def boot() -> list[tuple[object, int]]:
     # ---- 5) GovEngine — the verdict-from-reality (library; honest Coordinator wired at T5) ----
     print("[thor] GovEngine verdict engine ready — Verdict Coordinator wired at T5")
 
-    # ---- 6) Sentinel — meta-governance / health (peer; real halt wired at T8) ----
+    # ---- 6) Sentinel — meta-governance / health (peer; REAL halt wired at T8) ----
     sentinel = Sentinel(manager)
     manager.attach_sentinel(sentinel)   # T5: a caught lie escalates to meta-governance
-    print("[thor] Sentinel  meta-governance up (real halt wired at T8)")
+
+    def _http_health(url):
+        def fn():
+            import json
+            import urllib.request
+            try:
+                with urllib.request.urlopen(url, timeout=2) as r:
+                    body = json.loads(r.read() or "{}") if r.status == 200 else {}
+                    return {"alive": True, "responsive": bool(body.get("responsive", r.status == 200))}
+            except Exception:  # unreachable / hung → not responsive (the probe fails closed)
+                return {"alive": False, "responsive": False}
+        return fn
+
+    # T8: the Sentinel watches the LIVE surfaces; a critical one going unresponsive → halt (after re-probe).
+    sentinel.register("manager", critical=True, health_fn=_http_health(f"http://{HOST}:{PORTS['manager']}/health"))
+    sentinel.register("selfaudit", critical=True, health_fn=_http_health(f"http://{HOST}:{PORTS['selfaudit']}/health"))
+    sentinel.register("dashboard", critical=False, health_fn=_http_health(f"http://{HOST}:{PORTS['dashboard']}/"))
+    print("[thor] Sentinel  meta-governance up — REAL halt: kills rooms + blocks work; watches 3 live surfaces")
 
     # ---- 7) Self-Audit — the read-only correctness eyes (peer; real model wired at T9) ----
     sa_db.setup(conn)                      # create the read-only selfaudit role + tables (idempotent)
