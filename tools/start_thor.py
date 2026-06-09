@@ -169,8 +169,11 @@ def boot() -> list[tuple[object, int]]:
 
     # ---- 7) Self-Audit — the read-only correctness eyes (peer; real model wired at T9) ----
     sa_db.setup(conn)                      # create the read-only selfaudit role + tables (idempotent)
-    selfaudit = SelfAudit(_LockedConn(sa_db.connect_readonly()), sentinel=sentinel)
-    print("[thor] SelfAudit correctness eyes up — read-only DB role (real model wired at T9)")
+    from selfaudit import model_host as sa_model
+    sa_inspector = sa_model.select_model()   # T9: a real local Ollama/Qwen if present, else deterministic v1
+    selfaudit = SelfAudit(_LockedConn(sa_db.connect_readonly()), sentinel=sentinel, model=sa_inspector)
+    print(f"[thor] SelfAudit correctness eyes up — read-only DB role; model={sa_inspector.name} "
+          f"(zero frontier calls)")
 
     # ---- 8) Operator surface — the Dashboard window over the one truth ----
     dashboard = DashboardService(manager)

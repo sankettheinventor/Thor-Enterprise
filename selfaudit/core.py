@@ -84,4 +84,7 @@ class SelfAudit:
 
     # ---- health (probed by the Sentinel like any component — FR-14/AC-9) ----
     def health(self) -> dict:
-        return {"alive": self.up, "responsive": self.up, "model_loaded": True}
+        # model_loaded reflects REALITY now (not hardcoded): is the chosen inspector actually available?
+        return {"alive": self.up, "responsive": self.up,
+                "model_loaded": bool(self.model.loaded()), "model": self.model.name,
+                "frontier_calls": self.model.frontier_calls}
