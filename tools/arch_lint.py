@@ -29,12 +29,26 @@ def main() -> int:
         for i, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
             if FORBIDDEN.search(line):
                 violations.append(f"{rel}:{i}: {line.strip()}")
+    violations += _strangler_wired()
     if violations:
-        print("ARCH-LINT FAIL — AGT/Gitea imported outside adapters/ (Rule 4):")
+        print("ARCH-LINT FAIL — adapter discipline (Rule 4 imports + Strangler-wired):")
         print("\n".join(violations))
         return 1
-    print("arch-lint OK: no AGT/Gitea imports outside adapters/")
+    print("arch-lint OK: no AGT/Gitea imports outside adapters/; audit + identity routed through their ports")
     return 0
+
+
+def _strangler_wired() -> list[str]:
+    """M8 (T10) — beyond import-strings: the audit + identity PORTS must be CONSUMED by a product module
+    (the Manager), so a vendor swap is a one-file change. Catches a regression back to decorative adapters
+    (the exact H5 failure: ports defined but bypassed by the modules they claim to back)."""
+    miss: list[str] = []
+    core = (ROOT / "manager" / "core.py").read_text(encoding="utf-8")
+    if "ChainAudit" not in core or "self.eventlog = audit or" not in core:
+        miss.append("manager/core.py: audit NOT routed through the AuditPort (ChainAudit) — decorative (H5)")
+    if "MeshIdentity" not in core or "self.identity.verify_identity" not in core:
+        miss.append("manager/core.py: identity NOT routed through the IdentityPort — decorative (H5)")
+    return miss
 
 
 if __name__ == "__main__":

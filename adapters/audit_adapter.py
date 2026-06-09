@@ -15,13 +15,15 @@ from .contract import AuditPort
 
 
 class ChainAudit(AuditPort):
-    """AuditPort backed by the real M3 EventLog chain (the AGT Merkle/HMAC backend slot)."""
+    """AuditPort backed by the real M3 EventLog chain (the AGT Merkle/HMAC backend slot). A full drop-in
+    for the Manager's audit substrate: `self.eventlog = ChainAudit(EventLogWriter(...))`, so swapping the
+    audit backend (to another AuditPort) is a one-line construction change — the Strangler made real."""
 
     def __init__(self, writer: EventLogWriter) -> None:
         self._writer = writer
 
+    # ---- AuditPort vocabulary ----
     def append_event(self, event_type: str, payload: dict, **kw) -> dict:
-        # only the Manager's writer path reaches here — tamper-evidence + chaining underneath
         return self._writer.append(event_type, payload, **kw)
 
     def verify_chain(self) -> bool:
@@ -29,6 +31,13 @@ class ChainAudit(AuditPort):
 
     def all_events(self) -> list[dict]:
         return self._writer.all_events()
+
+    # ---- the writer interface the Manager + projections use (delegated to the backend) ----
+    def append(self, event_type: str, payload: dict, **kw) -> dict:
+        return self.append_event(event_type, payload, **kw)
+
+    def count(self) -> int:
+        return self._writer.count()
 
 
 def verify_chain(audit: AuditPort) -> dict:
