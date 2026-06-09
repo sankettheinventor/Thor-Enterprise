@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from wall.identity_stamper import _unb64
 
 from .messages import (CONTRACT_VERSION, MANAGER_TO_ROOM, MESSAGE_TYPES, ROOM_TO_MANAGER,
-                       MessageError, validate)
+                       validate)
 
 
 class ContractError(Exception):

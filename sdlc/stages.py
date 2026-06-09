@@ -19,7 +19,7 @@ import os
 import re
 import subprocess
 
-from adapters import agt_adapter, gitea_adapter
+from adapters import agt_adapter
 from leash.decision import DecisionRecorder
 from leash.policy import FrozenPolicy
 from leash.proxy import InRoomProxy

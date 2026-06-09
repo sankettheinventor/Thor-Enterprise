@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import csv
 import io
-import json
 
 # event_type -> the controls it provides evidence for, per framework
 _MAP: dict[str, dict[str, str]] = {

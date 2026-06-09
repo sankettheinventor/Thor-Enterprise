@@ -17,7 +17,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from wall import provisioner
-from wall.identity_stamper import IdentityStamper, _b64, _unb64
+from wall.identity_stamper import IdentityStamper, _unb64
 
 from .eventlog import EventLogWriter, _canon
 
