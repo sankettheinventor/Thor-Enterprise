@@ -88,14 +88,15 @@ def test_flow_a_done_to_signed_merge(fresh_ledger, host_repo):
     r0 = driver.merge_if_authorized(card, host_repo, branch, result, ctx)
     assert r0["merged"] is False and "Signature 3" in r0["reason"]
 
-    # 2) a forged signature is rejected — the card stays open
+    # 2) a forged signature is rejected — the card stays open (valid nonce, wrong material → bad sig)
     priv, pub, _b64 = _operator()
-    forged = mgr.approve(card, _b64(priv.sign(b"wrong material")), pub)
+    nonce = mgr.issue_challenge(card)                       # BUG-3: the nonce is now mandatory
+    forged = mgr.approve(card, _b64(priv.sign(b"wrong material")), pub, nonce=nonce)
     assert forged["verified"] is False and mgr.is_card_approved(card) is False
 
     # 3) a valid Signature 3 → real merge → feature.merged + room destroyed
-    material = ThorManager.card_material(card, mgr._get_card(card)["payload"])
-    assert mgr.approve(card, _b64(priv.sign(material.encode())), pub)["verified"] is True
+    material = ThorManager.card_material(card, mgr._get_card(card)["payload"], nonce)
+    assert mgr.approve(card, _b64(priv.sign(material.encode())), pub, nonce=nonce)["verified"] is True
     r = driver.merge_if_authorized(card, host_repo, branch, result, ctx)
     assert r["merged"] is True, r
     assert any(e["event_type"] == "feature.merged" for e in mgr.eventlog.all_events())
@@ -114,8 +115,9 @@ def test_flow_a_stale_verdict_refused(fresh_ledger, host_repo):
     driver = MergeDriver(mgr, engine=GovernanceEngine(mgr))
     card = driver.on_verdict(result)
     priv, pub, _b64 = _operator()
-    material = ThorManager.card_material(card, mgr._get_card(card)["payload"])
-    mgr.approve(card, _b64(priv.sign(material.encode())), pub)            # valid Signature 3
+    nonce = mgr.issue_challenge(card)                       # BUG-3: the nonce is now mandatory
+    material = ThorManager.card_material(card, mgr._get_card(card)["payload"], nonce)
+    mgr.approve(card, _b64(priv.sign(material.encode())), pub, nonce=nonce)   # valid Signature 3
 
     open(os.path.join(host_repo, "src/login.py"), "a").write("# moved\n")  # branch HEAD moves
     _git(host_repo, "add", "-A"); _git(host_repo, "-c", "user.email=c@t", "-c", "user.name=c", "commit", "-q", "-m", "move")

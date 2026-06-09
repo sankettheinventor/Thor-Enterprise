@@ -21,7 +21,9 @@ def _approve(mgr, card_id, payload):
     from wall.identity_stamper import _b64
     priv = Ed25519PrivateKey.generate()
     pub = _b64(priv.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw))
-    return mgr.approve(card_id, _b64(priv.sign(mgr.card_material(card_id, payload).encode())), pub)
+    nonce = mgr.issue_challenge(card_id)                    # BUG-3: the nonce is now mandatory
+    material = mgr.card_material(card_id, payload, nonce)
+    return mgr.approve(card_id, _b64(priv.sign(material.encode())), pub, nonce=nonce)
 
 
 # ── transition / signature gates (in-process; the H9 binding) ───────────────

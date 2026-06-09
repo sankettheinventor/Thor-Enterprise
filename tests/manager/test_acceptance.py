@@ -114,8 +114,9 @@ def test_ac4_signature_gates_the_plan(mgr):
     card = mgr.raise_card("plan", "F300", {"summary": "plan"})
     assert mgr.is_card_approved(card) is False
     from manager.core import ThorManager
-    material = ThorManager.card_material(card, {"summary": "plan"})
-    mgr.approve(card, _sign(priv, material), pub)
+    nonce = mgr.issue_challenge(card)                       # BUG-3: the nonce is now mandatory
+    material = ThorManager.card_material(card, {"summary": "plan"}, nonce)
+    mgr.approve(card, _sign(priv, material), pub, nonce=nonce)
     assert mgr.is_card_approved(card) is True
 
 
