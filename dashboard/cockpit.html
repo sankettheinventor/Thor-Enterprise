@@ -1,34 +1,52 @@
 <!doctype html>
 <!--
-  THOR — PM Surface cockpit. The operator's WINDOW over the one truth.
+  THOR — CEO Cockpit. The operator's WINDOW over the one truth (read + sign; never reach into a room).
   STYLE: dashboard/dashboard.css — the original watchdog's design system, copied VERBATIM (Figtree +
-  JetBrains Mono, the kb-*/acard/feed-row/status-card/trust-bar component set). This file emits exactly
-  the markup those classes expect and wires it to OUR DashboardAPI (:7080). Four quadrants per the PM
-  Surface PRD: Direct · Watch · Decide · Audit. READ-ONLY at this checkpoint — click-to-Sign is T7.
+  JetBrains Mono; the status-card / kb-* / acard / feed-row / trust-bar component set). This file emits
+  the markup those classes expect, harvested into the PM-Surface layout (Direct · Watch · Decide · Audit)
+  + a FLOW-A pipeline strip + a live Governance & Self-Audit panel, wired to OUR DashboardAPI (:7080).
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <meta name="theme-color" content="#EDEBE3"/>
-<title>THOR · Cockpit</title>
+<title>THOR · CEO Cockpit</title>
 <link rel="stylesheet" href="/dashboard.css"/>
 <style>
-  /* the only local rule: arrange the four PM-Surface quadrants (Direct/Watch/Decide/Audit) */
-  .content{padding:18px 18px 40px}
-  .quad{display:grid;grid-template-columns:1fr;gap:16px}
-  @media(min-width:1000px){.quad{grid-template-columns:1fr 1fr}}
+  .content{padding:18px 18px 48px}
+  /* FLOW-A pipeline strip */
+  .pipe{display:flex;align-items:stretch;gap:6px;margin:14px 0 4px;overflow-x:auto}
+  .pipe-step{flex:1;min-width:104px;background:var(--s0);border:1px solid var(--line);border-radius:var(--r2);
+             padding:9px 11px;position:relative}
+  .pipe-step .ps-lbl{font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em}
+  .pipe-step .ps-val{font-size:20px;font-weight:600;color:var(--ink);line-height:1.1;margin-top:2px}
+  .pipe-step.has::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px 0 0 3px;background:var(--brand)}
+  .pipe-arrow{display:flex;align-items:center;color:var(--ink3);font-size:13px}
+  /* the four quadrants + governance */
+  .quad{display:grid;grid-template-columns:1fr;gap:16px;margin-top:6px}
+  @media(min-width:1040px){.quad{grid-template-columns:1fr 1fr}.quad .span2{grid-column:1 / -1}}
   .quad > section{background:var(--s0);border:1px solid var(--line);border-radius:var(--r3);padding:18px 20px;box-shadow:var(--sh0);min-width:0}
   .kb-board{flex-direction:row;overflow-x:auto;gap:10px}
-  .kb-col{min-width:140px;flex:1;min-height:160px;max-height:none}
+  .kb-col{min-width:140px;flex:1;min-height:150px;max-height:none}
   .activity{margin-top:0;border:none;box-shadow:none;padding:0}
+  /* governance rows */
+  .gov-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .gov-tile{border:1px solid var(--line);border-radius:var(--r2);padding:12px 14px;background:var(--s1)}
+  .gov-tile .gt-top{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em}
+  .gov-tile .gt-val{font-size:18px;font-weight:600;margin-top:4px}
+  .gov-tile .gt-sub{font-size:12px;color:var(--ink2);margin-top:2px}
+  .gdot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .gdot.ok{background:var(--ok)}.gdot.bad{background:var(--bad)}.gdot.warn{background:var(--warn)}
+  .lie-row{display:flex;gap:8px;align-items:baseline;font-size:12px;padding:5px 0;border-top:1px dashed var(--line)}
+  .lie-room{font-family:var(--mono);color:var(--bad);font-weight:600}
 </style>
 </head>
 <body>
 
 <header class="topbar" role="banner">
   <div class="logo"><div class="logo-mark" aria-hidden="true">T</div>
-    <div><span class="logo-text">THOR</span><span class="logo-sub">Cockpit · PM Surface</span></div></div>
+    <div><span class="logo-text">THOR</span><span class="logo-sub">CEO Cockpit · the only voice you sign with</span></div></div>
   <div class="topbar-spacer"></div>
   <div class="topbar-right">
     <span class="chip c-ok" title="Ed25519 signing — your key, signed in your browser">sign enabled</span>
@@ -55,23 +73,26 @@
     <div class="status-card"><div class="top"><span class="label">Token spend</span></div><div class="stat" id="st-spend">0</div><div class="sublabel" id="st-spend-sub">of cap</div></div>
   </div>
 
-  <!-- FOUR QUADRANTS -->
+  <!-- FLOW A pipeline (the spine, live counts) -->
+  <div class="pipe" id="pipe"></div>
+
+  <!-- FOUR QUADRANTS + governance -->
   <div class="quad">
 
     <section>
-      <div class="panel-head"><h2>Direct</h2><span class="panel-sub">kanban</span><span class="chip c-neutral" id="kb-count" style="margin-left:auto">—</span></div>
+      <div class="panel-head"><h2>Direct</h2><span class="panel-sub">feature kanban</span><span class="chip c-neutral" id="kb-count" style="margin-left:auto">—</span></div>
       <div class="kb-board" id="kanban"></div>
     </section>
 
     <section>
-      <div class="panel-head"><h2>Watch</h2><span class="panel-sub">live rooms + cost</span><span class="chip c-ok" id="rooms-count" style="margin-left:auto">0</span></div>
+      <div class="panel-head"><h2>Watch</h2><span class="panel-sub">live rooms + token spend</span><span class="chip c-ok" id="rooms-count" style="margin-left:auto">0</span></div>
       <div id="rooms"></div>
       <div class="divider"></div>
       <div id="cost"></div>
     </section>
 
     <section>
-      <div class="panel-head"><h2>Decide</h2><span class="panel-sub">approval queue</span><span class="chip c-brand" id="cards-count" style="margin-left:auto">0</span></div>
+      <div class="panel-head"><h2>Decide</h2><span class="panel-sub">approval queue — your signature</span><span class="chip c-brand" id="cards-count" style="margin-left:auto">0</span></div>
       <div id="cards"></div>
     </section>
 
@@ -81,6 +102,12 @@
         <div class="activity-body" id="audit"></div>
       </div>
       <div class="f11 ink3 mono" style="margin-top:8px">Every row is a signed, hash-chained event from the Manager's ledger — not the cook's claim.</div>
+    </section>
+
+    <section class="span2">
+      <div class="panel-head"><h2>Governance &amp; Self-Audit</h2><span class="panel-sub">meta-governance · the read-only eyes</span></div>
+      <div class="gov-grid" id="gov"></div>
+      <div id="lies-detail" style="margin-top:10px"></div>
     </section>
 
   </div>
@@ -93,103 +120,129 @@
   const $ = id => document.getElementById(id);
   let failCount = 0;
 
-  // ── helpers (harvested from the original dashboard's idioms) ──
   const esc = s => s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   function relTime(ts){
     if (ts == null || ts === '') return '';
-    let sec;
-    if (typeof ts === 'number') sec = (Date.now()/1000) - ts;       // ledger ts = unix epoch seconds
-    else { try { sec = (Date.now() - new Date(ts).getTime())/1000; } catch { return String(ts); } }
+    let sec = typeof ts === 'number' ? (Date.now()/1000) - ts : (Date.now() - new Date(ts).getTime())/1000;
     if (sec < 0) sec = 0;
-    if (sec < 60) return Math.floor(sec) + 's ago';
-    if (sec < 3600) return Math.floor(sec/60) + 'm ago';
-    if (sec < 86400) return Math.floor(sec/3600) + 'h ago';
-    return Math.floor(sec/86400) + 'd ago';
+    if (sec < 60) return Math.floor(sec)+'s ago';
+    if (sec < 3600) return Math.floor(sec/60)+'m ago';
+    if (sec < 86400) return Math.floor(sec/3600)+'h ago';
+    return Math.floor(sec/86400)+'d ago';
   }
-  async function get(p){ const r = await fetch(location.origin + p, {cache:'no-store'}); if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
+  async function get(p){ const r = await fetch(location.origin+p,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }
   const live = t => { const el = $('live-text'); if (el) el.textContent = t; };
 
-  // ── trust bar ──
   function renderTrust(summary){
     const bar = $('trust-bar'), h = summary.health || {};
-    const alive = h.sentinel && h.sentinel.alive;
-    bar.className = 'trust-bar ' + (alive ? 'safe' : 'warn');
-    $('trust-text').textContent = alive ? 'THOR · live — governance up' : 'THOR · governance degraded';
-    $('trust-detail').textContent = (h.self_audit_meta_trust != null ? 'meta-trust ' + Math.round(h.self_audit_meta_trust*100) + '%' : '');
+    const halted = h.sentinel && h.sentinel.halted;
+    const alive = h.sentinel && h.sentinel.alive && !halted;
+    bar.className = 'trust-bar ' + (halted ? 'bad' : alive ? 'safe' : 'warn');
+    $('trust-text').textContent = halted ? 'THOR · HALTED — the Sentinel stopped the line (a governor failed)'
+      : alive ? 'THOR · live — governance up, the line is moving' : 'THOR · governance degraded';
+    $('trust-detail').textContent = (h.self_audit_meta_trust != null ? 'meta-trust '+Math.round(h.self_audit_meta_trust*100)+'%' : '');
     $('trust-uptime').textContent = 'ledger connected';
   }
   function renderDisconnected(){
     $('trust-bar').className = 'trust-bar bad';
     $('trust-text').textContent = 'THOR · DISCONNECTED — data may be stale; signing disabled';
-    $('trust-detail').textContent = ''; $('trust-uptime').textContent = '';
-    live('offline');
+    $('trust-detail').textContent=''; $('trust-uptime').textContent=''; live('offline');
   }
 
-  // ── glance stats ──
   function renderStats(summary, cards, costData, findings){
     $('st-pending').textContent = cards.length;
     $('st-pending-sub').textContent = cards.length ? 'in the Decide queue' : 'nothing waiting';
-    const alive = summary.health && summary.health.sentinel && summary.health.sentinel.alive;
-    const gov = $('st-gov'); gov.textContent = alive ? 'up' : 'down'; gov.className = 'stat ' + (alive ? 'ok' : 'bad');
-    $('st-gov-sub').textContent = (findings && findings.length ? findings.length + ' checker findings' : 'sentinel + self-audit');
-    const mt = summary.health ? summary.health.self_audit_meta_trust : null;
-    $('st-trust').textContent = mt != null ? Math.round(mt*100) + '%' : '—';
-    const sp = $('st-spend'); sp.textContent = (costData.total_spent || 0).toLocaleString();
+    const h = summary.health || {}; const alive = h.sentinel && h.sentinel.alive && !(h.sentinel.halted);
+    const gov = $('st-gov'); gov.textContent = (h.sentinel && h.sentinel.halted) ? 'HALT' : alive ? 'up' : 'down';
+    gov.className = 'stat ' + (alive ? 'ok' : 'bad');
+    $('st-gov-sub').textContent = (h.sentinel ? (h.sentinel.alarms||0)+' alarms · ' : '') + 'sentinel + self-audit';
+    const mt = h.self_audit_meta_trust;
+    $('st-trust').textContent = mt != null ? Math.round(mt*100)+'%' : '—';
+    const sp = $('st-spend'); sp.textContent = (costData.total_spent||0).toLocaleString();
     sp.className = 'stat ' + (costData.over_cap ? 'bad' : costData.alert ? 'warn' : '');
-    $('st-spend-sub').textContent = costData.cap ? 'of ' + costData.cap.toLocaleString() + (costData.alert ? ' · ALERT' : '') : 'no cap set';
+    $('st-spend-sub').textContent = costData.cap ? 'of '+costData.cap.toLocaleString()+(costData.alert?' · ALERT':'') : 'tokens · no cap set';
   }
 
-  // ── honesty meter: lies caught in containers (the moat made visible) ──
   function renderLies(lies){
-    const total = lies.total || 0;
-    const el = $('st-lies'); el.textContent = total;
-    el.className = 'stat ' + (total > 0 ? 'bad' : 'ok');
-    const containers = Object.keys(lies.by_container || {});
-    $('st-lies-sub').textContent = total === 0 ? 'honesty enforced'
-      : total + ' lie' + (total > 1 ? 's' : '') + ' caught in ' + containers.length + ' container' + (containers.length > 1 ? 's' : '');
+    const total = lies.total||0, el = $('st-lies');
+    el.textContent = total; el.className = 'stat ' + (total>0?'bad':'ok');
+    const cs = Object.keys(lies.by_container||{});
+    $('st-lies-sub').textContent = total===0 ? 'honesty enforced'
+      : total+' lie'+(total>1?'s':'')+' in '+cs.length+' container'+(cs.length>1?'s':'');
+    const recent = (lies.recent||[]);
+    $('lies-detail').innerHTML = recent.length
+      ? '<div class="f11 ink3 mono" style="margin-bottom:4px">CAUGHT LIES (claim vs reality):</div>' + recent.map(l =>
+          '<div class="lie-row"><span class="lie-room">'+esc(l.container)+'</span><span class="ink2">'+esc(l.feature_id||'')+'</span>'+
+          '<span class="ink3">'+esc((l.signals||[])[0]||'')+'</span></div>').join('')
+      : '<div class="f11 ink3">No lies caught — every claim has matched reality.</div>';
   }
 
-  // ── Direct · kanban (kb-* idiom) ──
+  // FLOW A pipeline (live counts from the kanban)
+  const STAGES = [['backlog','Backlog'],['ready','Ready'],['building','Build'],['in_qa','QA'],['awaiting_signature','Sign'],['done','Done']];
+  function renderPipeline(columns){
+    const parts = [];
+    STAGES.forEach(([k,lbl],i) => {
+      const n = (columns[k]||[]).length;
+      parts.push('<div class="pipe-step'+(n?' has':'')+'"><div class="ps-lbl">'+lbl+'</div><div class="ps-val">'+n+'</div></div>');
+      if (i < STAGES.length-1) parts.push('<div class="pipe-arrow">→</div>');
+    });
+    $('pipe').innerHTML = parts.join('');
+  }
+
   const COL = [['backlog','queued','Backlog'],['ready','queued','Ready'],['building','building','Building'],
                ['in_qa','planning','In QA'],['awaiting_signature','planning','Awaiting sig'],['done','done','Done']];
   function renderKanban(columns){
     let total = 0;
     $('kanban').innerHTML = COL.map(([key,dot,label]) => {
-      const items = columns[key] || []; total += items.length;
+      const items = columns[key]||[]; total += items.length;
       const body = items.length ? items.map(f =>
-        '<div class="kb-card"><div class="kb-card-top"><span class="kb-badge feature">' + esc(f.feature_id) + '</span>' +
-        (f.priority != null ? '<span class="kb-priority p' + Math.min(2, f.priority) + '">P' + esc(f.priority) + '</span>' : '') + '</div>' +
-        '<div class="kb-title">' + esc(f.title || f.feature_id) + '</div></div>').join('')
+        '<div class="kb-card"><div class="kb-card-top"><span class="kb-badge feature">'+esc(f.feature_id)+'</span>'+
+        (f.priority!=null?'<span class="kb-priority p'+Math.min(2,f.priority)+'">P'+esc(f.priority)+'</span>':'')+'</div>'+
+        '<div class="kb-title">'+esc(f.title||f.feature_id)+'</div></div>').join('')
         : '<div class="f11 ink3" style="padding:4px 2px">—</div>';
-      return '<div class="kb-col"><div class="kb-col-header"><span class="kb-col-dot ' + dot + '"></span>' +
-        '<span class="kb-col-label">' + label + '</span><span class="kb-col-count">' + items.length + '</span></div>' +
-        '<div class="kb-col-body">' + body + '</div></div>';
+      return '<div class="kb-col"><div class="kb-col-header"><span class="kb-col-dot '+dot+'"></span>'+
+        '<span class="kb-col-label">'+label+'</span><span class="kb-col-count">'+items.length+'</span></div>'+
+        '<div class="kb-col-body">'+body+'</div></div>';
     }).join('');
-    $('kb-count').textContent = total + ' features';
+    $('kb-count').textContent = total+' features';
   }
 
-  // ── Watch · rooms + cost ──
   function renderRooms(active){
     $('rooms-count').textContent = active.length;
     $('rooms').innerHTML = active.length ? active.map(r =>
-      '<div class="editing-strip"><span class="pulse"></span><span class="lbl">' + esc(r.stage) + '</span>' +
-      '<span class="file">' + esc(r.feature_id) + ' · ' + esc(r.room_id) + '</span>' +
-      '<span class="when">' + esc(r.status) + '</span></div>').join('')
-      : '<div class="kb-empty"><div class="icon">○</div><p>No rooms running — the Scheduler provisions one when a feature is built.</p></div>';
+      '<div class="editing-strip"><span class="pulse"></span><span class="lbl">'+esc(r.stage)+'</span>'+
+      '<span class="file">'+esc(r.feature_id)+' · '+esc(r.room_id)+'</span>'+
+      '<span class="when">'+esc(r.status)+'</span></div>').join('')
+      : '<div class="kb-empty"><div class="icon">○</div><p>No rooms running — a sealed Docker room is provisioned when a feature is built.</p></div>';
   }
   function renderCost(c){
-    const pct = c.cap ? Math.min(100, Math.round((c.total_spent / c.cap) * 100)) : 0;
+    const pct = c.cap ? Math.min(100, Math.round((c.total_spent/c.cap)*100)) : 0;
     const cls = c.over_cap ? 'bad' : c.alert ? 'warn' : 'ok';
     $('cost').innerHTML =
-      '<div class="metrics-strip" style="border:none;margin:0;padding:6px 2px">' +
-        '<div class="metric"><span class="m-lbl">Spend</span><span class="m-val ' + (c.alert?'alert':'') + '">' + (c.total_spent||0).toLocaleString() + (c.cap?' / '+c.cap.toLocaleString():'') + '</span></div>' +
-        '<div class="metric"><span class="m-lbl">Est</span><span class="m-val">' + (c.total_est||0).toLocaleString() + '</span></div>' +
-        '<div class="metric"><span class="m-lbl">Features</span><span class="m-val">' + (c.per_feature?c.per_feature.length:0) + '</span></div>' +
-      '</div>' +
-      (c.cap ? '<div class="build-spot-bar" style="margin-top:6px"><div class="build-spot-fill" style="width:' + pct + '%;background:var(--' + cls + ')"></div></div>' : '');
+      '<div class="metrics-strip" style="border:none;margin:0;padding:6px 2px">'+
+        '<div class="metric"><span class="m-lbl">Tokens spent</span><span class="m-val '+(c.alert?'alert':'')+'">'+(c.total_spent||0).toLocaleString()+(c.cap?' / '+c.cap.toLocaleString():'')+'</span></div>'+
+        '<div class="metric"><span class="m-lbl">Estimated</span><span class="m-val">'+(c.total_est||0).toLocaleString()+'</span></div>'+
+        '<div class="metric"><span class="m-lbl">Features</span><span class="m-val">'+(c.per_feature?c.per_feature.length:0)+'</span></div>'+
+      '</div>'+
+      (c.cap ? '<div class="build-spot-bar" style="margin-top:6px"><div class="build-spot-fill" style="width:'+pct+'%;background:var(--'+cls+')"></div></div>' : '');
   }
 
-  // ── Decide · approval cards (acard idiom, read-only) ──
+  function renderGovernance(summary){
+    const h = summary.health || {}, s = h.sentinel || {}, sa = h.self_audit || {};
+    const sentDot = s.halted ? 'bad' : 'ok', sentTxt = s.halted ? 'HALTED' : 'watching';
+    const mt = h.self_audit_meta_trust;
+    const cost = (sa.frontier_calls != null) ? (sa.frontier_calls===0 ? '$0 · zero frontier calls' : sa.frontier_calls+' frontier calls') : 'local model';
+    $('gov').innerHTML =
+      '<div class="gov-tile"><div class="gt-top"><span class="gdot '+sentDot+'"></span>Sentinel</div>'+
+        '<div class="gt-val">'+sentTxt+'</div><div class="gt-sub">'+(s.alarms||0)+' alarms · fail-closed halt authority</div></div>'+
+      '<div class="gov-tile"><div class="gt-top"><span class="gdot ok"></span>Self-Audit model</div>'+
+        '<div class="gt-val">'+esc(sa.model||'deterministic-v1')+'</div><div class="gt-sub">'+cost+' · read-only eyes</div></div>'+
+      '<div class="gov-tile"><div class="gt-top"><span class="gdot '+(mt>=0.8?'ok':mt>=0.5?'warn':'bad')+'"></span>System meta-trust</div>'+
+        '<div class="gt-val">'+(mt!=null?Math.round(mt*100)+'%':'—')+'</div><div class="gt-sub">system reliability, not per-agent trust</div></div>'+
+      '<div class="gov-tile"><div class="gt-top"><span class="gdot '+(($('st-lies').textContent!=='0')?'bad':'ok')+'"></span>Honesty</div>'+
+        '<div class="gt-val">'+$('st-lies').textContent+' caught</div><div class="gt-sub">claim-vs-reality lie detector</div></div>';
+  }
+
   const CARD_META = {
     merge:   { sev:'bad',  tag:'merge to main',  title:f=>'Approve the merge — '+f },
     qa_fail: { sev:'warn', tag:'re-work ticket', title:f=>'Authorize re-work — '+f },
@@ -200,37 +253,35 @@
     if (!cards.length){ $('cards').innerHTML = '<div class="panel-empty"><div class="icon">✓</div><h3>Nothing waiting</h3><p>The cooks are working within scope. Cards appear here when your signature is needed.</p></div>'; return; }
     $('cards').innerHTML = cards.map(card => {
       const m = CARD_META[card.type] || { sev:'info', tag:esc(card.type), title:f=>(card.type+' — '+f) };
-      return '<div class="acard ' + m.sev + '">' +
-        '<div class="acard-head"><span class="acard-tag ' + m.sev + '">' + m.tag + '</span><span class="acard-time">' + esc(card.status) + '</span></div>' +
-        '<div class="acard-title">' + esc(m.title(card.feature_id)) + '</div>' +
-        '<div class="acard-desc">' + esc(card.legible_reason) + '</div>' +
-        '<div class="acard-facts">' +
-          '<div><div class="acard-fact-lbl">Feature</div><div class="acard-fact-val">' + esc(card.feature_id) + '</div></div>' +
-          '<div><div class="acard-fact-lbl">Card</div><div class="acard-fact-val">' + esc(card.card_id) + '</div></div>' +
-        '</div>' +
-        '<div class="acard-actions"><button class="btn btn-ok" onclick="thorSign(\'' + esc(card.card_id) + '\')">Sign</button>' +
-        '<span class="f11 ink3">Ed25519 — signed in your browser with your key (it never leaves this device)</span></div>' +
+      return '<div class="acard '+m.sev+'">'+
+        '<div class="acard-head"><span class="acard-tag '+m.sev+'">'+m.tag+'</span><span class="acard-time">'+esc(card.status)+'</span></div>'+
+        '<div class="acard-title">'+esc(m.title(card.feature_id))+'</div>'+
+        '<div class="acard-desc">'+esc(card.legible_reason)+'</div>'+
+        '<div class="acard-facts">'+
+          '<div><div class="acard-fact-lbl">Feature</div><div class="acard-fact-val">'+esc(card.feature_id)+'</div></div>'+
+          '<div><div class="acard-fact-lbl">Card</div><div class="acard-fact-val">'+esc(card.card_id)+'</div></div>'+
+        '</div>'+
+        '<div class="acard-actions"><button class="btn btn-ok" onclick="thorSign(\''+esc(card.card_id)+'\')">Sign</button>'+
+        '<span class="f11 ink3">Ed25519 — signed in your browser with your key (it never leaves this device)</span></div>'+
         '</div>';
     }).join('');
   }
 
-  // ── Audit · ledger feed (feed-row idiom) ──
   function renderFeed(events){
-    const kind = t => /alarm|halt|deny|denied|reject|fail|tamper/i.test(t) ? ['fd-alarm','!']
+    const kind = t => /alarm|halt|deny|denied|reject|fail|tamper|dishonesty/i.test(t) ? ['fd-alarm','!']
       : /verdict|approve|merged|done|sign/i.test(t) ? ['fd-ok','+']
       : /warn|escalat|divergence|qa\./i.test(t) ? ['fd-warn','▲'] : ['fd-info','·'];
     const rows = events.slice().reverse().slice(0, 60);
-    $('feed-count').textContent = (events.length) + ' EVENTS';
+    $('feed-count').textContent = (events.length)+' EVENTS';
     $('audit').innerHTML = rows.length ? rows.map(e => {
       const [icon, glyph] = kind(e.event_type);
-      return '<div class="feed-row"><div class="feed-icon ' + icon + '">' + glyph + '</div>' +
-        '<div class="feed-body"><span class="feed-kind">#' + e.seq + ' ' + esc(e.event_type) + '</span>' +
-        '<span class="feed-txt">' + esc(e.actor) + (e.feature_id ? ' · ' + esc(e.feature_id) : '') + '</span></div>' +
-        '<span class="feed-time">' + relTime(e.ts) + '</span></div>';
+      return '<div class="feed-row"><div class="feed-icon '+icon+'">'+glyph+'</div>'+
+        '<div class="feed-body"><span class="feed-kind">#'+e.seq+' '+esc(e.event_type)+'</span>'+
+        '<span class="feed-txt">'+esc(e.actor)+(e.feature_id?' · '+esc(e.feature_id):'')+'</span></div>'+
+        '<span class="feed-time">'+relTime(e.ts)+'</span></div>';
     }).join('') : '<div class="activity-empty">no events yet</div>';
   }
 
-  // ── poll loop ──
   async function refreshAll(){
     try{
       const [summary, kb, rooms, cards, feed, costData, findings, lies] = await Promise.all([
@@ -239,16 +290,18 @@
       ]);
       failCount = 0;
       if (!summary.connected){ renderDisconnected(); return; }
-      const cardList = cards.cards || [];
+      const cardList = cards.cards || [], cols = kb.columns || {};
       renderTrust(summary);
       renderStats(summary, cardList, costData, findings.checker_findings || []);
       renderLies(lies || {total:0, by_container:{}});
-      renderKanban(kb.columns || {});
+      renderPipeline(cols);
+      renderKanban(cols);
       renderRooms(rooms.active || []);
       renderCost(costData);
+      renderGovernance(summary);
       renderCards(cardList);
       renderFeed(feed.events || []);
-      live('live · ' + cardList.length + ' pending');
+      live('live · '+cardList.length+' pending');
     } catch(e){
       failCount++;
       if (failCount >= 3) renderDisconnected(); else live('reconnecting…');
@@ -256,7 +309,7 @@
   }
   refreshAll();
   setInterval(refreshAll, POLL_MS);
-  window.refreshAll = refreshAll;   // exposed so the Sign module can refresh after a signature
+  window.refreshAll = refreshAll;
 })();
 </script>
 

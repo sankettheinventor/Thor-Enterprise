@@ -176,7 +176,7 @@ def boot() -> list[tuple[object, int]]:
           f"(zero frontier calls)")
 
     # ---- 8) Operator surface — the Dashboard window over the one truth ----
-    dashboard = DashboardService(manager)
+    dashboard = DashboardService(manager, selfaudit=selfaudit)   # surfaces governance + Self-Audit live
 
     # ---- 9) Bind the served apps to the shared peers + mount the live cockpit (read-only at T0) ----
     manager_api._manager = manager         # the Manager API's lazy singleton = the shared mechanism

@@ -14,10 +14,12 @@ from . import audit, cost, kanban, legible
 
 
 class DashboardService:
-    def __init__(self, manager, budget_cap: int | None = None, scheduler_factory=None) -> None:
+    def __init__(self, manager, budget_cap: int | None = None, scheduler_factory=None,
+                 selfaudit=None) -> None:
         self.manager = manager                 # the ONLY reference; no authoritative local store
         self.budget_cap = budget_cap
         self.scheduler_factory = scheduler_factory
+        self.selfaudit = selfaudit             # read-only eyes — surfaced on the cockpit governance panel
         self._disconnected = False             # set when the Manager is unreachable (FR-16)
 
     # ---- connection state (a window over the one truth) ----
@@ -98,8 +100,24 @@ class DashboardService:
                 "recent": recent[-10:]}
 
     def health_system(self) -> dict:
-        # Sentinel (M10) + Self-Audit meta-trust (M11) are stubbed until those modules land.
-        return {"sentinel": {"alive": True, "fail_closed": True}, "self_audit_meta_trust": 0.97}
+        """Live governance health for the cockpit: Sentinel (halt state, alarms) + Self-Audit (its local
+        model, ZERO frontier calls, meta-trust). Real now — no longer hardcoded."""
+        s = getattr(self.manager, "sentinel", None)
+        sentinel = {"alive": True, "fail_closed": True,
+                    "halted": bool(getattr(s, "halted", False)),
+                    "alarms": len(s.alarms) if s is not None else 0}
+        sa, mt = {}, 0.97
+        if self.selfaudit is not None:
+            try:
+                h = self.selfaudit.health()
+                sa = {"model": h.get("model"), "frontier_calls": h.get("frontier_calls", 0),
+                      "loaded": h.get("model_loaded")}
+                m = self.selfaudit.meta_trust()
+                if m:
+                    mt = m["score"]
+            except Exception:  # noqa: BLE001 — Self-Audit is advisory; never break the cockpit
+                pass
+        return {"sentinel": sentinel, "self_audit_meta_trust": mt, "self_audit": sa}
 
     # ---- writes: direction + signatures only (each recorded as an operator action, FR-15) ----
     def _action(self, action: str, detail: dict) -> None:
