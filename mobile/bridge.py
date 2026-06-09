@@ -37,6 +37,10 @@ class PhoneBridge:
     # ---- control plane -> phone (push, ciphertext) ----
     def push_card(self, card: dict, device_id: str) -> None:
         pub = self._devices[device_id]["e2ee_pub"]
+        # BUG-3: bind a one-time nonce to this card BEFORE pushing it. The phone signs the
+        # material-with-nonce and returns the nonce, so the phone path carries the SAME mandatory
+        # replay defence as the desktop (approve() now rejects a no-nonce signature).
+        card = {**card, "nonce": self.manager.issue_challenge(card["card_id"])}
         self.relay.cp_send(crypto.seal(json.dumps(card).encode(), self.cp_priv, pub))
 
     # ---- phone -> control plane (signed, ciphertext) ----
@@ -62,7 +66,8 @@ class PhoneBridge:
 
         # dispatch through the SAME DashboardService path as desktop (consistency + audit + dedupe)
         if cmd == "approve":
-            return {"status": "ok", **self.service.approve(msg["card_id"], msg["signature"], signing_pub)}
+            return {"status": "ok", **self.service.approve(msg["card_id"], msg["signature"], signing_pub,
+                                                           nonce=msg.get("nonce"))}
         if cmd == "reject":
             return {"status": "ok", **self.service.reject(msg["card_id"], msg["signature"], signing_pub,
                                                           msg.get("reason", ""))}

@@ -166,13 +166,14 @@ class ThorManager:
             return {"verified": False, "reason": "card not open"}      # replay on an approved card (AC-5)
         if not self.is_authorized_signer(signer_pub_b64):
             return {"verified": False, "reason": "unauthorized signer — not a registered operator key"}
-        if nonce is not None and self._challenges.get(card_id) != nonce:
-            return {"verified": False, "reason": "invalid or replayed challenge — card stays open"}
+        # BUG-3: the one-time nonce is MANDATORY — an absent nonce no longer skips the replay lock.
+        # A captured/pre-signed no-nonce signature must be rejected; the card stays open. (fail-closed)
+        if nonce is None or self._challenges.get(card_id) != nonce:
+            return {"verified": False, "reason": "missing or replayed challenge — card stays open"}
         material = self.card_material(card_id, card["payload"], nonce)
         if not self.identity.verify_signature(signer_pub_b64, material, signature_b64)["valid"]:
             return {"verified": False, "reason": "signature invalid — card stays open"}  # AC-5
-        if nonce is not None:
-            self._challenges.pop(card_id, None)                        # consume the nonce (replay defence)
+        self._challenges.pop(card_id, None)                            # consume the nonce (replay defence)
         self._record("card.approved", {"card_id": card_id, "decided_by": signer_pub_b64[:12],
                                       "signature": signature_b64}, feature_id=card["feature_id"])
         return {"verified": True, "action_taken": "approved"}

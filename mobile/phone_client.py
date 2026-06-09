@@ -45,10 +45,13 @@ class PhoneClient:
     def approve(self, card: dict) -> dict:
         if not self.connected:                          # FR-10 / AC-7 — never sign against a stale picture
             return {"sent": False, "reason": "disconnected — cannot sign against a possibly stale state"}
-        material = ThorManager.card_material(card["card_id"], card["payload"])
+        # BUG-3: sign the material BOUND to the card's one-time nonce and return the nonce, so the
+        # control plane's mandatory replay lock accepts it (and a replay/no-nonce signature is rejected).
+        nonce = card.get("nonce")
+        material = ThorManager.card_material(card["card_id"], card["payload"], nonce)
         sig = _b64(self._signing.sign(material.encode()))
         self._send({"command": "approve", "card_id": card["card_id"], "signature": sig,
-                    "device_id": self.device_id})
+                    "device_id": self.device_id, "nonce": nonce})
         return {"sent": True, "signature": sig}
 
     def sign_for(self, card_id: str, payload: dict) -> str:
