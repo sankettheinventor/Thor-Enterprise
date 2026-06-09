@@ -68,6 +68,18 @@ def _matches(path: str, patterns: tuple[str, ...]) -> bool:
     return False
 
 
+def _is_unsafe_path(target: str) -> bool:
+    """BUG-1: a path is unsafe if it is absolute or contains a parent-dir ('..') segment. Such a path
+    can TEXTUALLY satisfy a startswith() scope check ('src/../../x' startswith 'src/') yet escape the
+    worktree once os.path.join'd. We reject it BEFORE any scope match so traversal can never be
+    'within scope'. Checked on segments (both separators) so '..' / '/etc' / '..\\x' are all caught."""
+    if not target:
+        return False
+    if target.startswith("/") or target.startswith("\\"):
+        return True
+    return ".." in target.replace("\\", "/").split("/")
+
+
 def evaluate(policy: FrozenPolicy, action: dict) -> Verdict:
     """
     Pre-action decision (P3). Order matters: forbidden wins, then manifest→escalate, then scope.
@@ -77,6 +89,11 @@ def evaluate(policy: FrozenPolicy, action: dict) -> Verdict:
         return Verdict("deny", f"unrecognized action type: {action.get('type')!r}", "denied")
 
     target = action.get("target") or ""
+
+    # 0) path-traversal / absolute path → deny BEFORE any scope reasoning (BUG-1, sandbox escape).
+    #    A raw-string scope match can be fooled by 'src/../../x'; reject the escape outright.
+    if _is_unsafe_path(target):
+        return Verdict("deny", f"unsafe path (traversal/absolute), denied: {target}", "denied")
 
     # 1) forbidden wins (deny-precedence — PRD §10 "conflicting policies: deny-wins")
     if _matches(target, policy.forbidden_patterns):

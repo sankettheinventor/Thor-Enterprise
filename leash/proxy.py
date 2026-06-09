@@ -52,7 +52,10 @@ class InRoomProxy:
 
         # Enforce. The side effect happens ONLY on allow (strictly pre-action — P3).
         if verdict.decision == "allow":
-            self._execute(action)
+            try:
+                self._execute(action)
+            except GovernanceDenied as e:   # BUG-1 defense-in-depth: a path that slipped scope is
+                return {"status": "deny", "reason": str(e)}   # still refused at the disk boundary
             return {"status": "allow", "classification": verdict.classification}
         if verdict.decision == "escalate":
             self.escalation.hold(action, verdict)
@@ -63,7 +66,16 @@ class InRoomProxy:
         """Perform the approved tool. Only reached AFTER an allow verdict."""
         name = action.get("name")
         if name in ("write_file", "append_file", "edit_file"):
-            path = os.path.join(self.worktree_root, action["target"])
+            target = action["target"]
+            # BUG-1 defense-in-depth: even past the policy, refuse a write that resolves outside the
+            # worktree. Reject absolute / '..' targets, then assert the REAL (symlink-resolved) path is
+            # contained — so neither path-traversal nor a symlink can put the side effect outside the room.
+            if target.startswith("/") or target.startswith("\\") or ".." in target.replace("\\", "/").split("/"):
+                raise GovernanceDenied(f"path traversal blocked at disk boundary: {target!r}")
+            root = os.path.realpath(self.worktree_root)
+            path = os.path.realpath(os.path.join(root, target))
+            if path != root and not path.startswith(root + os.sep):
+                raise GovernanceDenied(f"resolved path escapes the worktree: {target!r}")
             os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
             mode = "a" if name == "append_file" else "w"
             with open(path, mode) as f:
