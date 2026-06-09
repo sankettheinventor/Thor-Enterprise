@@ -96,7 +96,10 @@ class LocalGitBackend(GitPort):
         return {"pr_id": pr_id, "branch": branch}
 
     def ci_result(self, repo: str, branch: str) -> dict:
-        """Real CI-style gate: compile the .py files the branch ADDS/MODIFIES (feeds verdict M1/M4)."""
+        """REPRESENTATIVE CI gate (H3): compiles the .py files the branch adds/modifies — a quick syntax
+        smoke, NOT the verdict's source of truth. The GovEngine verdict (M1/M4) runs the REAL tests in a
+        fresh subprocess (`govengine/reality.run_test`) and never trusts this. A real CI (lint/test/build
+        matrix) plugs in behind this same GitPort method at deploy."""
         # --diff-filter=AM => only files present at the branch tip (skip deletions relative to base)
         out = _git(repo, "diff", "--name-only", "--diff-filter=AM", f"main..{branch}")
         runs = []

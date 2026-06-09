@@ -35,10 +35,16 @@ def _verify_sig(pub_b64: str, sig_b64: str, material: str) -> bool:
 
 
 class ThorManager:
-    def __init__(self, conn, stamper: IdentityStamper | None = None) -> None:
+    def __init__(self, conn, stamper: IdentityStamper | None = None,
+                 audit=None, identity=None) -> None:
         self.conn = conn
         self.stamper = stamper or IdentityStamper()
-        self.eventlog = EventLogWriter(conn, self.stamper)
+        # T10 — the Strangler made real: THOR speaks ONLY the AuditPort/IdentityPort vocabulary, so the
+        # audit + identity vendor each swaps behind ONE adapter file (default = THOR's own chain + Ed25519).
+        from adapters.audit_adapter import ChainAudit
+        from adapters.identity_adapter import MeshIdentity
+        self.eventlog = audit or ChainAudit(EventLogWriter(conn, self.stamper))   # swappable AuditPort
+        self.identity = identity or MeshIdentity(self.stamper)                    # swappable IdentityPort
         self._eventlog_writable = True   # toggled to demonstrate fail-closed (AC-7)
         self.sentinel = None             # attached at boot; the Coordinator escalates caught lies to it
         self.authorized_signers: set[str] = set()   # T7: only these Ed25519 keys may sign cards
@@ -109,7 +115,7 @@ class ThorManager:
         room = provisioner.provision_room(task_type=task_type, network_mode=network_mode,
                                           feature_slice={"feature_id": feature_id}, **wall_kw)
         # FR-5 verify the Wall's identity token before trusting/registering the room
-        if not self.stamper.verify(room["identity_token"], expect_room_id=room["room_id"]):
+        if not self.identity.verify_identity(room["identity_token"], room["room_id"])["valid"]:
             provisioner.destroy_room(room["room_id"], room.get("_mount_plan"))
             raise ValueError("identity verification failed — room refused")
         self._record("room.provisioned",
@@ -127,7 +133,7 @@ class ThorManager:
         return {"room_id": room_id, "status": "destroyed", "branch_preserved": True}
 
     def verify_room_identity(self, room_id: str, token: str) -> bool:  # FR-5 / AC-8
-        return self.stamper.verify(token, expect_room_id=room_id)
+        return self.identity.verify_identity(token, room_id)["valid"]
 
     # ---- 3.5 Card & Signature Authority (the three signature points) ----
     def raise_card(self, type_: str, feature_id: str, payload: dict, held: bool = False) -> str:
@@ -162,7 +168,8 @@ class ThorManager:
             return {"verified": False, "reason": "unauthorized signer — not a registered operator key"}
         if nonce is not None and self._challenges.get(card_id) != nonce:
             return {"verified": False, "reason": "invalid or replayed challenge — card stays open"}
-        if not _verify_sig(signer_pub_b64, signature_b64, self.card_material(card_id, card["payload"], nonce)):
+        material = self.card_material(card_id, card["payload"], nonce)
+        if not self.identity.verify_signature(signer_pub_b64, material, signature_b64)["valid"]:
             return {"verified": False, "reason": "signature invalid — card stays open"}  # AC-5
         if nonce is not None:
             self._challenges.pop(card_id, None)                        # consume the nonce (replay defence)
