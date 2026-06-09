@@ -1,0 +1,21 @@
+# THOR QA room — an isolated, THROWAWAY test runner (the "QA room" of docs/THOR-TEST-ENVIRONMENT.md).
+#
+# Properties that make a verdict trustworthy:
+#   * the repo is bind-mounted READ-ONLY at /repo at run time — a test CANNOT mutate the build tree.
+#   * it carries NO Docker socket — a test cannot reach the host's Docker or the dev containers.
+#   * it talks ONLY to the separate QA Postgres (thor-qa-postgres) over the private QA network.
+#   * the image contains deps + runner only (no repo baked in) — destroyed after every run.
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/repo
+
+# deps only — copied for layer caching; the product code is mounted read-only at run time.
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# /work is the writable scratch (cwd); /repo is the read-only product mount.
+WORKDIR /work
+ENTRYPOINT ["python", "-m", "pytest", "-p", "no:cacheprovider", "--rootdir=/repo"]

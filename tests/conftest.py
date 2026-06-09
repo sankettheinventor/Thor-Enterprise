@@ -87,11 +87,19 @@ def clean_docker(request):
 def fresh_ledger():
     """[R1] A real Postgres connection on a TRUNCATEd ledger; asserts it starts at genesis."""
     try:
-        import docker
-        from manager import db, pg
-        pg.start(docker.from_env())
-        conn = db.connect()
-        db.init_schema(conn)
+        from manager import db
+        if os.environ.get("THOR_PG_DSN"):
+            # QA lane (make qa): a SEPARATE throwaway Postgres is already provisioned on its own
+            # network+volume; connect straight to it — no Docker socket inside the QA room, so the QA
+            # verdict stays isolated from the dev DB. dev/prove lanes are unchanged (else-branch).
+            conn = db.connect()
+            db.init_schema(conn)
+        else:
+            import docker
+            from manager import pg
+            pg.start(docker.from_env())
+            conn = db.connect()
+            db.init_schema(conn)
     except Exception as e:  # noqa: BLE001
         pytest.skip(f"postgres/docker unavailable: {e}")
     with conn.cursor() as cur:
