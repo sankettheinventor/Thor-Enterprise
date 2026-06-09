@@ -32,6 +32,7 @@ class Sentinel:
         self._heartbeat = 0
         self._maintenance: dict | None = None
         self.accepts_work = False
+        self.halted = False            # C3: set on a systemic halt → the Manager blocks all new work
 
     def register(self, name: str, critical: bool, health_fn: Callable[[], dict]) -> None:
         self.components[name] = Component(name, critical, health_fn)
@@ -59,8 +60,10 @@ class Sentinel:
                            f"{r['name']} unhealthy (alive={r['alive']} responsive={r['responsive']})",
                            name=r["name"])
                 if r["critical"]:                 # fail-closed, proportionate (FR-6 / FR-17 / AC-1)
+                    if self.probe(r["name"])["healthy"]:   # R6 anti-flap: re-probe once; a blip recovers
+                        continue
                     scope = "system" if r["name"] in _SYSTEMIC else f"component:{r['name']}"
-                    self.halt(scope, f"{r['name']} unresponsive")
+                    self.halt(scope, f"{r['name']} unresponsive (confirmed on re-probe)")
         return results
 
     # ---- 10.2 Loadedness (FR-2 / AC-5) ----
@@ -88,7 +91,19 @@ class Sentinel:
 
     # ---- 10.6 Halt Authority — fail-closed, proportionate (FR-6 / FR-17 / AC-8) ----
     def halt(self, scope: str, reason: str) -> dict:
-        rec = {"scope": scope, "reason": reason}
+        """C3 — a HALT physically ENFORCES: it destroys the affected rooms and (for a systemic fault)
+        blocks all new work. The branch/work persists in git; only the live container dies (fail-closed).
+        Proportionate (AC-8): `room:X`/a non-systemic component halts the smallest scope; a systemic
+        component (leash/manager/govengine/eventlog) or `system` halts everything."""
+        only: set[str] | None = None
+        systemic = scope == "system" or scope.removeprefix("component:") in _SYSTEMIC
+        if scope.startswith("room:"):
+            only, systemic = {scope.split(":", 1)[1]}, False
+        if systemic:
+            self.halted = True                 # the Manager refuses new provisions while halted
+            self.accepts_work = False
+        rooms_halted = self._destroy_rooms(only)
+        rec = {"scope": scope, "reason": reason, "systemic": systemic, "rooms_halted": rooms_halted}
         self.halts.append(rec)
         if self.manager is not None:
             try:
@@ -96,6 +111,47 @@ class Sentinel:
             except Exception:  # noqa: BLE001
                 pass
         return rec
+
+    def _destroy_rooms(self, only: set[str] | None) -> list[str]:
+        """Physically destroy the working rooms in scope (all if only=None). Returns the ids killed."""
+        if self.manager is None:
+            return []
+        try:
+            rooms = self.manager.state_summary()["rooms"]
+        except Exception:  # noqa: BLE001
+            return []
+        killed = []
+        for rid, r in rooms.items():
+            if r.get("status") != "working" or (only is not None and rid not in only):
+                continue
+            try:
+                self.manager.destroy_room(rid)
+                killed.append(rid)
+            except Exception:  # noqa: BLE001 — already gone; the branch persists regardless
+                pass
+        return killed
+
+    # ---- 10.5 Canary verdicts: a PASSING planted-failure means a BROKEN detector → halt (AC-2) ----
+    def evaluate_canaries(self, canaries: list[dict]) -> dict:
+        """Given the canary results (from sentinel.canary fired at the REAL Leash/Engine), HALT if any
+        passed — a planted must-fail that got through means the detector is blind (a systemic failure)."""
+        broken = [c for c in canaries if not c.get("healthy")]
+        for c in broken:
+            self.alarm("critical",
+                       f"CANARY BROKEN: {c['name']} expected {c.get('expected')} got {c.get('result')}")
+            self.halt("system", f"detector blind: {c['name']}")
+        return {"canaries": canaries, "broken": [c["name"] for c in broken], "all_healthy": not broken}
+
+    # ---- 10.8 Shadow/orphan reaper (AC-10) — reconcile Docker reality vs the owned set ----
+    def reap_orphans(self, known_room_ids: set[str] | None = None) -> list[str]:
+        from wall.lifecycle import LifecycleController
+        known = known_room_ids
+        if known is None and self.manager is not None:
+            known = set(self.manager.state_summary()["rooms"].keys())
+        reaped = LifecycleController().reap_orphans(known or set())
+        if reaped:
+            self.alarm("degraded", f"reaped {len(reaped)} orphan container(s): {reaped}")
+        return reaped
 
     # ---- 10.9 Alarm (respects a maintenance window; FR-10 / FR-15) ----
     def alarm(self, severity: str, message: str, name: str | None = None) -> dict:
