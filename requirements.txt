@@ -14,5 +14,5 @@ coverage>=7.0          # coverage-of-diff for the fake-test detector (GovEngine 
 pytest>=8.0.0
 httpx>=0.27            # fastapi.testclient (HTTP-surface auth tests)
 
-# optional — only a LIVE ClaudeCook needs this (tests use an injected stub; install for real builds):
-#   anthropic>=0.40    # cook/agent.py ClaudeCook (needs ANTHROPIC_API_KEY + room one-door egress)
+# The production cook is Claude Code IN the room (wall/image/Dockerfile.claude) — no Python LLM SDK
+# here; it authenticates with CLAUDE_CODE_OAUTH_TOKEN and is governed by leash.claude_code_hook.

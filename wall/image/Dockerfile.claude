@@ -1,0 +1,41 @@
+# THOR Room image — Claude Code COOK variant.
+#
+# Claude Code runs INSIDE the sealed room as the cook (the AI builder). THOR governs it by wiring the
+# Leash as a PreToolUse hook via MANAGED settings — the highest-precedence Claude Code settings, which
+# the cook (an unprivileged user) cannot override or disable. Every Write/Edit/MultiEdit/NotebookEdit/
+# Bash the cook attempts is sent to `leash.claude_code_hook`, which evaluates it against the room's
+# frozen policy (the SAME leash.policy engine as FLOW B) and ALLOWS (exit 0) or BLOCKS (exit 2 + reason).
+#
+# Auth: NO API key. At run time provide CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token` on a logged-in
+# machine — uses your Claude subscription). Egress: the sealed room must be given ONE-DOOR egress to
+# Claude's hosts (api.anthropic.com, claude.ai, ...) for Claude Code to function — see DEPLOYMENT.md.
+#
+# Build (from repo root):  docker build -f wall/image/Dockerfile.claude -t thor-room-claude:latest .
+FROM node:20-bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# Claude Code — the cook.
+RUN npm install -g @anthropic-ai/claude-code
+
+# The THOR Leash hook (governance), root-owned so the unprivileged cook cannot modify/disable it.
+COPY leash/policy.py leash/claude_code_hook.py /opt/thor/leash/
+RUN touch /opt/thor/leash/__init__.py
+ENV PYTHONPATH=/opt/thor
+
+# Managed settings — highest precedence; the cook CANNOT override or remove this PreToolUse hook.
+RUN mkdir -p /etc/claude-code && printf '%s' '{ \
+  "hooks": { "PreToolUse": [ { "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash", \
+    "hooks": [ { "type": "command", "command": "python3 -m leash.claude_code_hook" } ] } ] } }' \
+  > /etc/claude-code/managed-settings.json
+
+# Unprivileged cook — cannot weaken its own jail (D2). The node base ships a uid-1000 `node` user;
+# remove it so the cook is the canonical uid-1000 unprivileged user (matches the Wall's mount perms).
+RUN userdel -r node 2>/dev/null || true; useradd -m -u 1000 cook
+USER cook
+WORKDIR /work
+# Runtime: the Wall mounts the task slice read-only at /task/feature.json and the worktree (rw) at /work.
+# The Manager launches the cook non-interactively, e.g.:
+#   claude -p "<task from the slice>" --permission-mode acceptEdits --output-format json
+ENTRYPOINT ["/bin/bash"]

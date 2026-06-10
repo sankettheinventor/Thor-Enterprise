@@ -1,14 +1,14 @@
 """
-The Cook seam: EVERY action a cook proposes is governed by the Leash (THOR's invariant). Proven for
-both a scripted cook AND an LLM (Claude) cook with a stubbed client — so the governance routing is
-verified with NO API key and NO network. Docker-free, un-deferred.
+The Cook seam: EVERY action a cook proposes is governed by the Leash (THOR's invariant). The production
+cook is Claude Code in the room (governed by leash.claude_code_hook — see test_claude_code_hook.py); here
+the in-process ScriptedCook proves the same routing invariant with no LLM/no network. Docker-free.
 """
 import os
 import shutil
 import tempfile
 
 from adapters import agt_adapter
-from cook.agent import ClaudeCook, ScriptedCook
+from cook.agent import ScriptedCook
 from leash.policy import FrozenPolicy
 from leash.proxy import InRoomProxy
 
@@ -44,39 +44,5 @@ def test_scripted_cook_actions_are_governed_by_the_leash():
         assert os.path.exists(os.path.join(wt, "src/login.py"))
         assert not os.path.exists(os.path.join(wt, "infra/secrets.tf"))
         assert not os.path.exists(os.path.realpath(os.path.join(base, "escape.txt")))
-    finally:
-        shutil.rmtree(base, ignore_errors=True)
-
-
-class _FakeBlock:
-    def __init__(self, text):
-        self.text = text
-
-
-class _FakeMsg:
-    def __init__(self, text):
-        self.content = [_FakeBlock(text)]
-
-
-class _FakeMessages:
-    @staticmethod
-    def create(**kwargs):
-        # the LLM proposes one in-scope write and one OUT-OF-SCOPE write; the Leash must block the latter
-        return _FakeMsg('[{"name":"write_file","args":{"path":"src/app.py","content":"x=1\\n"}},'
-                        ' {"name":"write_file","args":{"path":"infra/boom.tf","content":"bad"}}]')
-
-
-class _FakeAnthropic:
-    messages = _FakeMessages()
-
-
-def test_claude_cook_llm_actions_are_governed_by_the_leash():
-    proxy, wt, base = _proxy()
-    try:
-        cook = ClaudeCook(client=_FakeAnthropic())           # injected stub — no key, no network
-        r = cook.build({"room_id": ROOM, "feature_id": "F", "scope_files": ["src/"]}, proxy)
-        assert r["n_allowed"] == 1 and r["n_denied"] == 1, r  # the LLM's out-of-scope write was BLOCKED
-        assert os.path.exists(os.path.join(wt, "src/app.py"))
-        assert not os.path.exists(os.path.join(wt, "infra/boom.tf"))
     finally:
         shutil.rmtree(base, ignore_errors=True)

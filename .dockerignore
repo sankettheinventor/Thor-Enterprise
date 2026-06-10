@@ -1,0 +1,10 @@
+.git
+.venv
+.smoke
+.thor
+docs
+tests
+_reference
+*.log
+**/__pycache__
+node_modules

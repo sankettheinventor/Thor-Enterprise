@@ -1,23 +1,21 @@
 """
 The Cook — the AI builder that writes code for a feature. THOR's invariant (FR-1/FR-2): the cook
-NEVER touches governance; EVERY action it proposes is submitted through the Leash proxy (allow / deny /
-escalate decided BEFORE any side effect). This module provides that governed-build loop plus two cooks
-behind one interface:
+NEVER touches governance; EVERY action it proposes is submitted to the Leash (allow / deny / escalate
+decided BEFORE any side effect).
 
-  ScriptedCook — a deterministic cook (a fixed action list). Tests / demo / CI; no LLM, no network.
-  ClaudeCook   — a real LLM builder (Anthropic). It asks the model for a list of file-write actions and
-                 routes EACH through the Leash. The client is injectable (unit-testable with a stub).
-                 A LIVE run additionally needs: ANTHROPIC_API_KEY, the `anthropic` SDK, and the sealed
-                 room's ONE-DOOR egress (M2 Phase 2b) so the room can reach the API. Until egress lands,
-                 a live cook runs control-plane-side; the Leash governs every action either way.
+The PRODUCTION cook is **Claude Code running inside the sealed room**, governed by the Leash via the
+`leash.claude_code_hook` PreToolUse hook (wired through managed settings the cook cannot disable). See
+`wall/image/Dockerfile.claude` + DEPLOYMENT.md.
+
+This module is the IN-PROCESS governance seam used by tests/demo:
+  ScriptedCook — a deterministic cook (a fixed action list); every action routed through the Leash
+                 proxy by `run_through_leash`. The same invariant, exercised with no LLM/no network.
 
 Architectural note: the cook PROPOSES, the Leash DISPOSES. Governance is the Leash gating each action —
-independent of where the cook process runs. The hardened target is an in-room agent-server behind the
-one-door egress; the seam below does not change when that lands.
+independent of where the cook process runs (in-room Claude Code, or this in-process scripted cook).
 """
 from __future__ import annotations
 
-import json
 from abc import ABC, abstractmethod
 
 
@@ -58,32 +56,3 @@ class ScriptedCook(CookAgent):
 
     def propose(self, feature_slice: dict) -> list[dict]:
         return list(self._actions)
-
-
-class ClaudeCook(CookAgent):
-    """Real LLM builder (Anthropic). `client` is injectable so this is unit-testable with a stub; a live
-    run needs ANTHROPIC_API_KEY + the `anthropic` SDK + the room's one-door egress."""
-
-    def __init__(self, client=None, model: str = "claude-opus-4-8") -> None:
-        self._client = client
-        self.model = model
-
-    def _llm(self):
-        if self._client is None:
-            import anthropic   # lazy — only a LIVE run needs the SDK/key
-            self._client = anthropic.Anthropic()
-        return self._client
-
-    def propose(self, feature_slice: dict) -> list[dict]:
-        prompt = (
-            "You are a THOR cook. Implement the feature writing ONLY files within scope_files. Reply "
-            "with a JSON array of actions: [{\"name\":\"write_file\",\"args\":{\"path\":\"...\","
-            "\"content\":\"...\"}}]. Feature: "
-            + json.dumps({k: feature_slice.get(k) for k in
-                          ("feature_id", "acceptance_criteria", "scope_files", "planned_test")}))
-        msg = self._llm().messages.create(
-            model=self.model, max_tokens=4096, messages=[{"role": "user", "content": prompt}])
-        block = msg.content[0]
-        text = block.text if hasattr(block, "text") else block["text"]
-        start, end = text.find("["), text.rfind("]")           # the model may wrap JSON in prose/fences
-        return json.loads(text[start:end + 1]) if start != -1 and end != -1 else []
