@@ -1,0 +1,149 @@
+# THOR Enterprise — Kubernetes manifests (control plane + Postgres).
+#
+# STATUS: authored + YAML-validated. NOT cluster-verified in this environment (no cluster available).
+# Apply on a real cluster with:  kubectl apply -f k8s/thor-enterprise.yaml
+# IMPORTANT (read k8s/README.md): on Kubernetes the sealed-ROOM provisioner must be the k8s-native
+# Pod provisioner (the deferred "compose↔k8s parity" work, wall AC-9) — the control plane below serves
+# the governance surfaces; provisioning rooms on a cluster needs that adapter wired first.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: thor
+---
+# Secrets are placeholders — in production inject via a real secret store (Sealed Secrets / External
+# Secrets / Vault). Create the real one with, e.g.:
+#   kubectl -n thor create secret generic thor-secrets \
+#     --from-literal=THOR_API_TOKEN=$(openssl rand -hex 32) \
+#     --from-literal=POSTGRES_PASSWORD=$(openssl rand -hex 16)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: thor-secrets
+  namespace: thor
+type: Opaque
+stringData:
+  THOR_API_TOKEN: "CHANGE_ME_use_a_secret_store"
+  POSTGRES_PASSWORD: "CHANGE_ME_use_a_secret_store"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: thor
+spec:
+  clusterIP: None          # headless — for the StatefulSet
+  selector:
+    app: thor-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: thor-postgres
+  namespace: thor
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: thor-postgres
+  template:
+    metadata:
+      labels:
+        app: thor-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_DB
+              value: thor
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: thor-secrets
+                  key: POSTGRES_PASSWORD
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "thor"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "1Gi" }
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: pgdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: thor-controlplane
+  namespace: thor
+spec:
+  selector:
+    app: thor-controlplane
+  ports:
+    - { name: dashboard, port: 7080, targetPort: 7080 }
+    - { name: manager,   port: 7100, targetPort: 7100 }
+    - { name: sentinel,  port: 7140, targetPort: 7140 }
+    - { name: selfaudit, port: 7150, targetPort: 7150 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: thor-controlplane
+  namespace: thor
+spec:
+  replicas: 1               # single writer (the Manager is the sole EventLog writer) — do NOT scale >1
+  selector:
+    matchLabels:
+      app: thor-controlplane
+  template:
+    metadata:
+      labels:
+        app: thor-controlplane
+    spec:
+      containers:
+        - name: controlplane
+          image: thor-controlplane:latest    # push to your registry; set imagePullPolicy accordingly
+          env:
+            - name: THOR_BIND_HOST
+              value: "0.0.0.0"          # bind all interfaces so the Service can reach the surfaces
+            - name: THOR_PG_DSN
+              value: postgresql://postgres:$(POSTGRES_PASSWORD)@postgres.thor.svc.cluster.local:5432/thor
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: thor-secrets, key: POSTGRES_PASSWORD }
+            - name: THOR_API_TOKEN
+              valueFrom:
+                secretKeyRef: { name: thor-secrets, key: THOR_API_TOKEN }
+          ports:
+            - { containerPort: 7080 }
+            - { containerPort: 7100 }
+            - { containerPort: 7140 }
+            - { containerPort: 7150 }
+          livenessProbe:
+            httpGet: { path: /health, port: 7100 }
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: { path: /health, port: 7100 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "2Gi" }

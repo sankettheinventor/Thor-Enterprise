@@ -26,6 +26,7 @@ Open the dashboard URL printed in the banner to see live state. Ctrl-C stops it.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 import threading
 import time
@@ -50,7 +51,9 @@ from selfaudit import db as sa_db
 from selfaudit.core import SelfAudit
 from sentinel.core import Sentinel
 
-HOST = "127.0.0.1"
+# Bind host: 127.0.0.1 by default (safe for local dev). In a container/k8s the surfaces must bind
+# 0.0.0.0 to be reachable through published ports / Services — set THOR_BIND_HOST=0.0.0.0.
+HOST = os.environ.get("THOR_BIND_HOST", "127.0.0.1")
 PORTS = {"manager": 7100, "dashboard": 7080, "sentinel": 7140, "selfaudit": 7150}
 COCKPIT = REPO / "dashboard" / "cockpit.html"
 DASH_CSS = REPO / "dashboard" / "dashboard.css"   # the original watchdog's design system, verbatim

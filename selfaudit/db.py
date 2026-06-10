@@ -9,18 +9,31 @@ hallucinating inspector can write wrong reports, but can never alter code/state/
 from __future__ import annotations
 
 import os
+from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 from psycopg import sql
 
-from manager.pg import PG_DB, PG_HOST_PORT
+from manager import pg
 
 # Production-configurable (no hardcoded host/password). Full override via THOR_SELFAUDIT_DSN; otherwise
-# derive from the same Postgres the Manager uses (PG_HOST_PORT/PG_DB) with the read-only `selfaudit`
-# role + a configurable password. Defaults match the dev bootstrap, so make prove/qa are unchanged.
+# derive the read-only `selfaudit` DSN from the SAME Postgres the Manager binds to (host/port/db come
+# from manager.pg.DSN — which already honors THOR_PG_DSN/THOR_PG_*), swapping in the selfaudit role +
+# a configurable password. This keeps ONE source of truth for the DB host (the localhost-hardcode bug
+# crashed the containerized control plane: the Manager reached the external DB but Self-Audit did not).
 SELFAUDIT_PASSWORD = os.environ.get("THOR_SELFAUDIT_PASSWORD", "selfaudit")
-RO_DSN = os.environ.get("THOR_SELFAUDIT_DSN") or \
-    f"postgresql://selfaudit:{SELFAUDIT_PASSWORD}@localhost:{PG_HOST_PORT}/{PG_DB}"
+
+
+def _derive_ro_dsn() -> str:
+    override = os.environ.get("THOR_SELFAUDIT_DSN")
+    if override:
+        return override
+    u = urlsplit(pg.DSN)                                   # same host/port/db the Manager uses
+    netloc = f"selfaudit:{SELFAUDIT_PASSWORD}@{u.hostname}" + (f":{u.port}" if u.port else "")
+    return urlunsplit((u.scheme, netloc, u.path, u.query, u.fragment))
+
+
+RO_DSN = _derive_ro_dsn()
 
 _OWN_TABLES = """
 CREATE TABLE IF NOT EXISTS selfaudit_reports (

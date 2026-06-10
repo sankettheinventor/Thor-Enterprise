@@ -1,0 +1,51 @@
+# THOR Enterprise — single-host production deployment (control plane + Postgres).
+#
+# Secrets come from the environment (or a .env file beside this one — NEVER commit it):
+#   THOR_API_TOKEN       (required) bearer token for the mutating HTTP endpoints
+#   THOR_PG_PASSWORD     (recommended) Postgres password   THOR_SELFAUDIT_PASSWORD (optional)
+# Bring up:
+#   export THOR_API_TOKEN=$(openssl rand -hex 32) THOR_PG_PASSWORD=$(openssl rand -hex 16)
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Dashboard → http://127.0.0.1:7080/   (mutating calls require: Authorization: Bearer $THOR_API_TOKEN)
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: ${THOR_PG_PASSWORD:-thor}
+      POSTGRES_DB: thor
+    volumes:
+      - thor_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d thor"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  controlplane:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: thor-controlplane:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # reach the compose Postgres by SERVICE NAME on the internal network
+      THOR_PG_DSN: postgresql://postgres:${THOR_PG_PASSWORD:-thor}@postgres:5432/thor
+      THOR_API_TOKEN: ${THOR_API_TOKEN:?set a strong THOR_API_TOKEN before deploying}
+      THOR_SELFAUDIT_PASSWORD: ${THOR_SELFAUDIT_PASSWORD:-selfaudit}
+      THOR_BIND_HOST: "0.0.0.0"        # surfaces must bind 0.0.0.0 to be reachable through ports
+    ports:
+      - "7080:7080"   # cockpit / dashboard
+      - "7100:7100"   # manager
+      - "7140:7140"   # sentinel
+      - "7150:7150"   # self-audit
+    # The control plane provisions sealed ROOM containers as siblings via the host Docker daemon.
+    # (On Kubernetes this is replaced by a k8s-native provisioner — see DEPLOYMENT.md.)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+volumes:
+  thor_pgdata:
