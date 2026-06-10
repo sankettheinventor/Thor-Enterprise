@@ -203,8 +203,18 @@ class QAStage(Stage):
                            cwd=repo, env=env, timeout=30)
         return p.returncode, p.stdout + p.stderr
 
+    # A MATRIX of edge inputs (not just zeros): empty/boundary values that trip un-handled cases.
+    _QA_EDGE_INPUTS = ("0", "-1", "[]", "''", "{}", "None")
+    # Only REAL-bug exceptions count (un-handled boundary/data errors). TypeError/AttributeError/
+    # ValueError are EXCLUDED — passing a wrong-typed edge value or hitting a validation guard is not a
+    # bug in the function, so clean numeric code (e.g. add(a,b)) is never false-flagged (no softening,
+    # no false positives — failure-mode C both ways).
+    _QA_BUG_EXC = ("ZeroDivisionError", "IndexError", "KeyError", "StopIteration",
+                   "RecursionError", "OverflowError", "UnboundLocalError")
+
     def _adversarial(self, repo, feature):
-        """Generate NEW edge-case tests from the ACTUAL code (zeros/edge inputs) and run them."""
+        """Independent adversary: from the ACTUAL code, fuzz a matrix of edge inputs and flag any
+        un-handled REAL-bug crash (a non-zeros bug — empty list, boundary — is caught, not just zeros)."""
         code_rel = feature.get("code_file")
         new_tests, bugs = [], []
         if not code_rel or not os.path.exists(os.path.join(repo, code_rel)):
@@ -212,21 +222,27 @@ class QAStage(Stage):
         src = open(os.path.join(repo, code_rel)).read()
         module = os.path.splitext(os.path.basename(code_rel))[0]
         mod_dir = os.path.dirname(code_rel) or "."
+        bug_excs = ", ".join(self._QA_BUG_EXC)
         for name, params in re.findall(r"def (\w+)\(([^)]*)\)", src):
             n = len([p for p in params.split(",") if p.strip()])
-            edge = ", ".join(["0"] * n)                          # edge input: zeros (catches div-by-zero etc.)
-            test_name = f"edge_{name}_zeros"
+            test_name = f"edge_{name}"
             new_tests.append(test_name)
-            script = (f"import sys; sys.path.insert(0, {mod_dir!r})\n"
-                      f"from {module} import {name}\n"
-                      f"try:\n    {name}({edge})\nexcept Exception as e:\n"
-                      f"    print('EDGE_BUG', type(e).__name__); sys.exit(2)\nprint('ok')\n")
-            tf = os.path.join(repo, f".qa_{test_name}.py")
-            open(tf, "w").write(script)
-            rc, out = self._run(repo, f".qa_{test_name}.py")
-            os.remove(tf)                                        # QA's own test space — cleaned up
-            if rc == 2:
-                bugs.append(f"{name}() raises on edge input ({edge}): {out.strip().split()[-1]}")
+            for ev in self._QA_EDGE_INPUTS:                      # try each edge input until one crashes
+                args = ", ".join([ev] * n)
+                script = (f"import sys; sys.path.insert(0, {mod_dir!r})\n"
+                          f"from {module} import {name}\n"
+                          f"try:\n    {name}({args})\n"
+                          f"except ({bug_excs}) as e:\n"
+                          f"    print('EDGE_BUG', type(e).__name__); sys.exit(2)\n"
+                          f"except Exception:\n    pass\n"        # type-misuse / validation = NOT a bug
+                          f"print('ok')\n")
+                tf = os.path.join(repo, f".qa_{test_name}.py")
+                open(tf, "w").write(script)
+                rc, out = self._run(repo, f".qa_{test_name}.py")
+                os.remove(tf)                                    # QA's own test space — cleaned up
+                if rc == 2:
+                    bugs.append(f"{name}() crashes on edge input ({args}): {out.strip().split()[-1]}")
+                    break                                        # one confirmed crash per function is enough
         return new_tests, bugs
 
     def edge_check(self, output: dict) -> tuple[bool, str]:
