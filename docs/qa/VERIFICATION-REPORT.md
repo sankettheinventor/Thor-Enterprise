@@ -7,8 +7,9 @@
 
 > **All 4 named critical bugs are closed with red→green proof; the core mechanism is proven on the
 > live system from clean (155 passed / 9 skipped, exit 0) and on one human-signed end-to-end merge.
-> The audit surfaced 4 NEW issues (2 fail-open in the Sentinel halt path, ranked HIGH/MED, logged and
-> NOT fixed); 9 acceptance tests remain deferred for named reasons; multi-process races are unverified.**
+> The audit surfaced 4 NEW issues (2 fail-open in the Sentinel halt path) — all now ALSO fixed with
+> red→green proof (follow-up, post-sign-off); 9 acceptance tests remain deferred for named reasons;
+> multi-process races are unverified.**
 
 Testing reduces uncertainty; it does not prove zero bugs. What follows is exactly what passed and what
 remains unchecked.
@@ -71,23 +72,32 @@ empty claim with a green verifier now escalates (fail-closed), while an already-
   | wall ac8 crash recovery resumes | crash-recovery harness |
   | wall ac9 same image compose & k8s | k8s parity |
 
-## 4. New issues found by the audit (logged in `QA-FINDINGS.md`, NOT fixed)
+## 4. New issues found by the audit — all FIXED in the post-sign-off follow-up
 
-1. **FINDING-B (HIGH)** `sentinel/core.py:121` — a halt that can't read Manager state destroys **zero**
-   rooms but records success. Fails open on the C3 physical-kill guarantee in degraded conditions.
-2. **FINDING-C (MED)** `sentinel/core.py:130` — a room that genuinely fails to die during a halt is
-   silently swallowed ("already gone"), no alarm. A live room can survive a halt undetected.
-3. **FINDING-A (LOW–MED)** `wall/provisioner.py:28` — import-time `docker.from_env()` couples Manager
-   import to a live daemon (breaks docker-free testing; fragile import).
-4. **Minor** `sentinel/core.py:111/167` — halt/alarm ledger-record swallow → a halt can be unaudited
-   (the physical action still happens). `ruff`: 4× F401 unused imports (style only).
+Each was reported first (Phase 3), then fixed after sign-off with red→green proof, one commit each.
 
-These are working-module changes; per the campaign they are reported, not auto-fixed, pending sign-off.
+1. **FINDING-B (HIGH)** `sentinel/core.py` `_destroy_rooms` — a halt that couldn't read Manager state
+   destroyed **zero** rooms silently. **FIXED** (`9fe5c44`): alarm + fall back to killing rooms by
+   Docker label (reality). Test: `test_finding_bc_halt_failclosed` (red→green, right reason).
+2. **FINDING-C (MED)** `sentinel/core.py` `_destroy_rooms` — a room that failed to die was swallowed as
+   "already gone". **FIXED** (`9fe5c44`): verify via Docker `health.alive`; a still-alive room raises a
+   critical alarm and is not reported as killed.
+3. **FINDING-A (LOW–MED)** `wall/provisioner.py` — import-time `docker.from_env()`. **FIXED** (`2a18f14`):
+   lazy `_ensure_client()`; import no longer needs a daemon; the QA room is re-sealed (no docker socket).
+   Test: `test_finding_a_lazy_docker`.
+4. **Minor** `sentinel/core.py:111` — unaudited-halt swallow. **FIXED** (`9fe5c44`): a halt whose ledger
+   record fails now surfaces `rec.recorded=False`/`audit_error`. `ruff`: 4× F401 unused imports
+   **removed** (`c4e9596`) — ruff now All-checks-passed; compileall + arch-lint clean.
+
+Neighbours verified green after the fixes: Sentinel ACs + FLOW D real-halt = 16 passed live; `make qa`
+= 30 passed. (Full `make prove` re-run after the fixes — see §2.)
 
 ## 5. What we did NOT / COULD NOT verify (the honest gaps)
 
-- **The 4 new findings are not fixed or regression-tested.** FLOW D proves the *happy* halt path; the
-  fail-open conditions (DB unreadable, wedged container) in FINDING-B/C are NOT what the green proves.
+- **The 4 new findings are now fixed + regression-tested** (docker-free unit tests assert the
+  fail-closed alarms; neighbours green). What remains unproven there: the *real* DB-down / wedged-
+  container conditions are simulated with fakes, not reproduced against a genuinely crashed Postgres or
+  a real stuck Docker container — the fail-closed *logic* is proven, the *physical* extreme is not.
 - **Multi-process races:** R6 (governor flap-thrash under concurrency) and load tests (many parallel
   rooms) are single-process-tested or deferred — true concurrency is unverified.
 - **The 9 deferred ACs** above (k8s parity, crash recovery, raw-HTTP egress lock, real non-Claude cook,
@@ -100,9 +110,13 @@ These are working-module changes; per the campaign they are reported, not auto-f
 - **Dashboard UX** is a known clutter problem, parked separately in `DASHBOARD-UX-BACKLOG.md` (not a
   correctness defect).
 
-## 6. Commits (branch `qa/verification-campaign`, 9 commits)
+## 6. Commits (branch `qa/verification-campaign`)
 
 ```
+c4e9596 chore(lint): remove 4 F401 unused imports + mark findings A/B/C/minor FIXED
+9fe5c44 fix(FINDING-B/C): the Sentinel HALT now fails CLOSED (C3 must always enforce)
+2a18f14 fix(FINDING-A): create the Docker client lazily — import no longer needs a daemon
+68b5590 qa(phase5): final verification report + parked dashboard UX backlog
 b82f722 qa(phase4): live end-to-end proof artifacts (replay + live-Qwen self-audit)
 f0c35c8 fix(BUG-3 followup): supply the now-mandatory nonce in signature-gate test helpers
 348c8e3 qa(phase3): edge tests (R7 heartbeat, R11 maintenance) + audit findings register
