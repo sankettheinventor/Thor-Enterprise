@@ -51,9 +51,14 @@ class CookRuntime(ABC):
         """Agent credentials/config to inject (from the host env / a secret store). THOR never stores keys."""
         return {}
 
+    def egress_allowlist(self) -> tuple[str, ...]:
+        """The ONLY hosts this agent may reach (its model/auth endpoints). The one-door gateway denies
+        everything else. Default: from THOR_COOK_EGRESS (comma-separated); empty = fully sealed."""
+        return tuple(h.strip() for h in os.environ.get("THOR_COOK_EGRESS", "").split(",") if h.strip())
+
     def describe(self, feature_slice: dict) -> dict:
         return {"cook": self.name, "image": self.image(), "command": self.command(feature_slice),
-                "env_keys": sorted(self.env().keys())}
+                "env_keys": sorted(self.env().keys()), "egress_allowlist": list(self.egress_allowlist())}
 
 
 class ClaudeCodeRuntime(CookRuntime):
@@ -73,6 +78,11 @@ class ClaudeCodeRuntime(CookRuntime):
     def env(self) -> dict:
         tok = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
         return {"CLAUDE_CODE_OAUTH_TOKEN": tok} if tok else {}
+
+    def egress_allowlist(self) -> tuple[str, ...]:
+        # Claude Code's required hosts (the one-door gateway denies all else). Override with THOR_COOK_EGRESS.
+        env = super().egress_allowlist()
+        return env or ("api.anthropic.com", "claude.ai", "console.anthropic.com", "statsig.anthropic.com")
 
 
 class GenericCommandRuntime(CookRuntime):

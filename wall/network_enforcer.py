@@ -71,6 +71,17 @@ def assert_sealed(container) -> bool:
 
 ROOM_NET = "thor-room-net"
 EGRESS_NET = "thor-egress-net"
+GATEWAY_NAME = "thor-leash-gateway"   # the dual-homed gateway (must match leash.gateway.GATEWAY_NAME)
+GATEWAY_PORT = 8001
+
+
+def egress_proxy_env() -> dict:
+    """Env that forces a one-door room's HTTP(S) egress through the governed gateway — the ONLY door.
+    The room has no other route (internal net), so even an agent that ignores these vars cannot reach
+    the internet; setting them makes well-behaved clients (curl, Claude Code, ...) use the door cleanly."""
+    proxy = f"http://{GATEWAY_NAME}:{GATEWAY_PORT}"
+    return {"HTTP_PROXY": proxy, "HTTPS_PROXY": proxy,
+            "http_proxy": proxy, "https_proxy": proxy, "NO_PROXY": "localhost,127.0.0.1"}
 
 
 def ensure_networks(client) -> None:

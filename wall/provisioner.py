@@ -96,10 +96,12 @@ def provision_room(
     if network_mode == "one_door":
         network_enforcer.ensure_networks(client)
         net_kwargs = network_enforcer.one_door_room_kwargs()
+        proxy_env = network_enforcer.egress_proxy_env()   # route egress through the governed gateway
     else:
         net_kwargs = network_enforcer.network_kwargs(room_id)
+        proxy_env = {}
 
-    env = {"THOR_ROOM_TOKEN": token, "THOR_ROOM_ID": room_id}
+    env = {"THOR_ROOM_TOKEN": token, "THOR_ROOM_ID": room_id, **proxy_env}
     if extra_env:
         env.update(extra_env)
 
