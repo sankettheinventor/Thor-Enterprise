@@ -10,5 +10,11 @@ seam used by tests/demo: `ScriptedCook` (a deterministic cook) whose every actio
 Leash proxy by `run_through_leash` — the same invariant, exercised without an LLM.
 """
 from .agent import CookAgent, ScriptedCook, run_through_leash
+from .runtime import (ClaudeCodeRuntime, CookRuntime, GenericCommandRuntime, known_runtimes,
+                      register_runtime, select_runtime)
 
-__all__ = ["CookAgent", "ScriptedCook", "run_through_leash"]
+__all__ = [
+    "CookAgent", "ScriptedCook", "run_through_leash",
+    "CookRuntime", "ClaudeCodeRuntime", "GenericCommandRuntime",
+    "select_runtime", "register_runtime", "known_runtimes",
+]
