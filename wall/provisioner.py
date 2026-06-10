@@ -120,7 +120,11 @@ def provision_room(
         user="cook",                       # unprivileged (D2)
         cap_drop=["ALL"],                  # drop Linux capabilities (D2)
         security_opt=["no-new-privileges"],
-        read_only=False,                   # /work needs rw; root FS hardening tightened later (D2)
+        read_only=True,                    # M11: the root FS is READ-ONLY — the cook cannot write the
+                                           # image. Only the explicit writable set below is writable.
+        # ephemeral scratch + a cook-OWNED writable HOME (uid 1000) so HOME-based tool config/cache works
+        # (npm, ~/.claude, ...); /work — the worktree — is a rw bind mount in plan.mounts.
+        tmpfs={"/tmp": "", "/home/cook": "uid=1000,gid=1000"},
         labels={
             "thor.room": "1",
             "thor.task_type": task_type,
@@ -144,6 +148,9 @@ def provision_room(
         "sealed": locked,
         "identity_token": token,
         "agent_port": config.AGENT_PORT,
+        # M10: the room's routable address (DNS name on its network + the agent port). A sealed room has
+        # no network, so no address; a networked (one_door) room is reachable here for cross-host routing.
+        "address": (None if network_mode == "sealed" else f"{room_id}:{config.AGENT_PORT}"),
         "_mount_plan": plan,   # kept so destroy can clean temp dirs
     }
 

@@ -121,7 +121,8 @@ class ThorManager:
         self._record("room.provisioned",
                      {"room_id": room["room_id"], "container": room["container"],
                       "task_type": task_type, "feature_id": feature_id, "branch": branch,
-                      "status": "working", "identity_token": room["identity_token"]},
+                      "status": "working", "identity_token": room["identity_token"],
+                      "address": room.get("address")},   # M10: routable address into the registry
                      room_id=room["room_id"], feature_id=feature_id)
         room["_branch"] = branch
         return room
@@ -229,10 +230,11 @@ class ThorManager:
             if event_type == "room.provisioned":
                 cur.execute(
                     "INSERT INTO rooms (room_id,container,task_type,feature_id,branch,status,"
-                    "identity_token,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
-                    "ON CONFLICT (room_id) DO UPDATE SET status=EXCLUDED.status",
+                    "address,identity_token,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "ON CONFLICT (room_id) DO UPDATE SET status=EXCLUDED.status, "
+                    "address=EXCLUDED.address",
                     (p["room_id"], p.get("container"), p["task_type"], p["feature_id"],
-                     p["branch"], p["status"], p.get("identity_token"), time.time()))
+                     p["branch"], p["status"], p.get("address"), p.get("identity_token"), time.time()))
             elif event_type == "room.destroyed":
                 cur.execute("UPDATE rooms SET status='destroyed', destroyed_at=%s WHERE room_id=%s",
                             (time.time(), p["room_id"]))
@@ -269,9 +271,11 @@ class ThorManager:
         """The projected current state (registry + open cards) — for the Dashboard and AC-3 diff."""
         s: dict = {"rooms": {}, "cards": {}}
         with self.conn.cursor() as cur:
-            cur.execute("SELECT room_id,task_type,feature_id,branch,status FROM rooms ORDER BY room_id")
+            cur.execute("SELECT room_id,task_type,feature_id,branch,status,address FROM rooms "
+                        "ORDER BY room_id")
             for r in cur.fetchall():
-                s["rooms"][r[0]] = {"task_type": r[1], "feature_id": r[2], "branch": r[3], "status": r[4]}
+                s["rooms"][r[0]] = {"task_type": r[1], "feature_id": r[2], "branch": r[3],
+                                    "status": r[4], "address": r[5]}   # M10: routable address per room
             cur.execute("SELECT card_id,type,feature_id,status FROM cards ORDER BY card_id")
             for r in cur.fetchall():
                 s["cards"][r[0]] = {"type": r[1], "feature_id": r[2], "status": r[3]}
