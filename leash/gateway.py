@@ -46,6 +46,7 @@ def start_gateway(client: docker.DockerClient, leash_host_path: str, decision_lo
     ONLY bridge between the sealed room and the outside. Runs leash/gateway_proxy.py on :8001.
     """
     _rm(client, GATEWAY_NAME)
+    network_enforcer.ensure_networks(client)   # FINDING-D: the gateway depends on the room/egress nets
     os.makedirs(decision_log_dir, exist_ok=True)
     container = client.containers.run(
         config.ROOM_IMAGE,
