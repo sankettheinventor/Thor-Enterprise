@@ -116,7 +116,7 @@ class BuildStage(Stage):
     def mandate(self) -> str:
         return "build exactly one feature within scope, under the live Leash; produce a branch + claim_done"
 
-    def run(self, feature: dict, repo: str, manager=None, **_) -> dict:
+    def run(self, feature: dict, repo: str, manager=None, cook=None, **_) -> dict:
         fid = feature["feature_id"]
         branch = f"feature/{fid}"
         room = manager.provision_room(fid, task_type="build", branch=branch, worktree_host_path=repo)
@@ -136,11 +136,21 @@ class BuildStage(Stage):
         # each decision recorded via the Manager (single ledger); fail-closed if the governor is down.
         proxy = InRoomProxy(agt_adapter, DecisionRecorder(manager), repo)
         _git(repo, "checkout", "-q", "-B", branch)
-        decisions: dict[str, str] = {}
-        for rel, content in feature.get("code_files", {}).items():
-            res = proxy.handle_tool_call(
-                {"name": "write_file", "room_id": room_id, "args": {"path": rel, "content": content}})
-            decisions[rel] = res["status"]
+
+        # H4: the cook PROPOSES; the Leash DISPOSES. The cook is pluggable — default is the deterministic
+        # ScriptedCook over the genesis code_files (puppet, for the gated suite); production passes a REAL
+        # frontier cook (Claude Code etc. via cook.CookRuntime, running IN the room). Either way EVERY
+        # action routes through the InRoomProxy above (decide-before, FLOW B) — the cook is UNTRUSTED and
+        # cannot bypass it. The control plane does NOT clean/retry/supplement the cook's output.
+        from cook.agent import ScriptedCook
+        if cook is None:
+            cook = ScriptedCook([{"name": "write_file", "args": {"path": rel, "content": content}}
+                                 for rel, content in feature.get("code_files", {}).items()])
+        result = cook.build({"room_id": room_id, "feature_id": fid, **feature}, proxy)
+        decisions: dict[str, str] = {
+            a["args"]["path"]: a["_verdict"]["status"]
+            for a in (result["allowed"] + result["denied"] + result["escalated"])
+            if a.get("name") == "write_file"}
         _git(repo, "add", "-A")
         _git(repo, "-c", "user.email=cook@thor", "-c", "user.name=cook", "commit", "-q",
              "-m", f"implement {feature.get('title', fid)} [{fid}]")
