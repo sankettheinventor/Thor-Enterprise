@@ -49,7 +49,73 @@ def is_hollow(repo: str, test_relpath: str | None, contract: dict) -> tuple[bool
     covered, why = _covers_feature_code(repo, test_relpath, cited)
     if not covered:
         return True, f"hollow: {why}"
-    return False, f"test exercises the feature and asserts non-trivially; {why}"
+
+    # (d) DISCRIMINATION (H1+): a genuine test must be able to go RED. We gut the feature's function
+    #     bodies and re-run the test: a real test now FAILS (it asserted real behaviour); a fake test
+    #     that merely covers + asserts-something-always-true still PASSES → it tests nothing → hollow.
+    #     This catches the deepest fakery a frontier agent can write (covers the code, asserts vacuously).
+    discriminates, why_d = _discriminates(repo, test_relpath, cited)
+    if not discriminates:
+        return True, f"hollow: {why_d}"
+    return False, f"test exercises + discriminates (can go red); {why}; {why_d}"
+
+
+def _gut_function_bodies(src: str) -> str:
+    """Replace every function/method body with `return None` — keeps signatures importable but removes
+    all behaviour, so a behaviour-asserting test must fail against it."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return src
+
+    class _Gut(ast.NodeTransformer):
+        def visit_FunctionDef(self, node):
+            self.generic_visit(node)
+            node.body = [ast.Return(value=ast.Constant(value=None))]
+            return node
+
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+    gutted = _Gut().visit(tree)
+    ast.fix_missing_locations(gutted)
+    try:
+        return ast.unparse(gutted)
+    except Exception:  # noqa: BLE001 — older runtimes without unparse: skip (other gates stand)
+        return src
+
+
+def _discriminates(repo: str, test_relpath: str, cited: list[str]) -> tuple[bool, str]:
+    """True iff the test FAILS when the feature's code is gutted (i.e. it genuinely tests behaviour).
+    The feature source is restored unconditionally in `finally` — the worktree is left intact."""
+    target = next((f for f in cited if f.endswith(".py")
+                   and not os.path.basename(f).startswith("test_")), None)
+    if not target:
+        return True, "no source file in scope to mutate"
+    target_path = os.path.join(repo, target)
+    try:
+        original = open(target_path, encoding="utf-8").read()
+    except OSError:
+        return True, "target unreadable (gated by the mechanical probes)"
+    gutted = _gut_function_bodies(original)
+    if gutted == original:
+        return True, f"{target} has no function bodies to gut"
+
+    # PYTHONDONTWRITEBYTECODE=1 so the run leaves NO __pycache__ — the verdict must change nothing (AC-5).
+    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    try:
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(gutted)
+        rc = subprocess.run([sys.executable, test_relpath], cwd=repo, env=env,
+                            capture_output=True, timeout=30).returncode
+    except Exception as e:  # noqa: BLE001 — mutation run failed: don't fail-open, the coverage gate stands
+        return True, f"discrimination run unavailable ({e}); coverage-of-diff stands"
+    finally:
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(original)   # ALWAYS restore the cook's worktree
+
+    if rc == 0:
+        return False, f"test PASSES even with {target} gutted — it asserts nothing real (cannot go red)"
+    return True, f"test FAILS on gutted {target} — it can go red (genuinely discriminates)"
 
 
 def _function_body_lines(target_path: str) -> set[int]:
