@@ -15,6 +15,10 @@ import threading
 from wall.identity_stamper import IdentityStamper
 
 GENESIS = "GENESIS"
+# M4: a fixed Postgres advisory-lock key for THE single ledger chain. Held for the duration of one
+# append transaction, it serializes max(seq)->INSERT across ALL connections AND processes — so two
+# Manager instances racing cannot assign the same seq and fork the hash-chain. ("THOR" as a bigint.)
+_CHAIN_LOCK_KEY = 0x54484F52
 
 
 def _canon(payload: dict) -> str:
@@ -37,8 +41,13 @@ class EventLogWriter:
                client_id: str | None = None) -> dict:
         import time
 
-        with self._lock:
+        # M4: serialize the whole max(seq)->INSERT in ONE transaction guarded by a Postgres advisory
+        # lock, so the chain holds across PROCESSES (not just threads). The in-process Lock stays as a
+        # cheap first gate; pg_advisory_xact_lock is released automatically at commit. `transaction()`
+        # works on the autocommit connection (it issues an explicit BEGIN/COMMIT for just this write).
+        with self._lock, self.conn.transaction():
             with self.conn.cursor() as cur:
+                cur.execute("SELECT pg_advisory_xact_lock(%s)", (_CHAIN_LOCK_KEY,))
                 if client_id:  # idempotency: a retry returns the existing row, no new chain entry
                     cur.execute("SELECT seq, hash FROM eventlog WHERE client_id=%s", (client_id,))
                     row = cur.fetchone()
@@ -60,8 +69,7 @@ class EventLogWriter:
                     (seq, prev, digest, signature, ts, actor, event_type, room_id, feature_id,
                      payload_text, client_id),
                 )
-            self.conn.commit()
-            return {"seq": seq, "hash": digest}
+        return {"seq": seq, "hash": digest}
 
     def all_events(self) -> list[dict]:
         cols = ["seq", "prev_hash", "hash", "signature", "ts", "actor", "event_type",
