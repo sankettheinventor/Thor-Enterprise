@@ -1,0 +1,14 @@
+{
+  "name": "THOR — CEO Cockpit",
+  "short_name": "THOR",
+  "description": "Governed development in your pocket — watch the line, catch lies, sign merges.",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0b0d10",
+  "theme_color": "#0b0d10",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

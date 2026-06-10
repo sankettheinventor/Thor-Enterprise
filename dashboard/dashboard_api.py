@@ -6,8 +6,11 @@ Run with:  uvicorn dashboard.dashboard_api:app --host 127.0.0.1 --port 7080
 """
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import Depends, FastAPI
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel
 
 from thor_http_auth import require_token
@@ -87,6 +90,31 @@ def lies():
 @app.get("/health/system")
 def health_system():
     return _service.health_system()
+
+
+@app.get("/stream")
+async def stream():
+    """Real-time sync (Module 9: every head is a REMOTE HEAD on the same Manager truth). Server-Sent
+    Events push a tick whenever the ledger advances (a new signed event), so the laptop AND the phone
+    re-sync instantly off the ONE ledger — no second state, no drift. Read-only; reads are public."""
+    async def gen():
+        yield "event: hello\ndata: {}\n\n"        # connected
+        last = -1
+        while True:
+            try:
+                seq = _service.manager.eventlog.count()
+            except Exception:                      # noqa: BLE001 — transient DB blip: hold last, keep stream alive
+                seq = last
+            if seq != last:
+                last = seq
+                yield f"data: {json.dumps({'seq': seq})}\n\n"
+            else:
+                yield ": keep-alive\n\n"           # comment frame so proxies don't time the stream out
+            await asyncio.sleep(1)
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+                                      "Connection": "keep-alive"})
 
 
 @app.post("/features")

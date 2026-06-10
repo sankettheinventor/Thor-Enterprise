@@ -79,7 +79,9 @@ class EventLogWriter:
             return [dict(zip(cols, r)) for r in cur.fetchall()]
 
     def count(self) -> int:
-        with self.conn.cursor() as cur:
+        # Holds the same lock as append() so the SSE /stream poll never races a write on the shared
+        # connection (one psycopg conn is not concurrency-safe across threads).
+        with self._lock, self.conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM eventlog")
             return cur.fetchone()[0]
 

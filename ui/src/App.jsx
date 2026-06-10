@@ -26,8 +26,22 @@ export default function App() {
 
   useEffect(() => {
     refresh()
-    const t = setInterval(refresh, 4000)
-    return () => clearInterval(t)
+    // Real-time sync: subscribe to the Manager's SSE stream — the laptop AND the phone re-sync the
+    // instant the ledger advances. A dropped stream => fail-closed (signing disabled until reconnect).
+    let es
+    try {
+      es = new EventSource('/stream')
+      es.addEventListener('hello', () => setConnected(true))
+      es.onmessage = () => refresh() // ledger advanced -> pull the new truth
+      es.onerror = () => setConnected(false)
+    } catch {
+      /* EventSource unavailable -> the polling heartbeat below carries it */
+    }
+    const t = setInterval(refresh, 8000) // heartbeat fallback if SSE is blocked by a proxy
+    return () => {
+      if (es) es.close()
+      clearInterval(t)
+    }
   }, [refresh])
 
   const sign = async (cardId) => {
@@ -43,7 +57,8 @@ export default function App() {
   }
 
   return (
-    <div style={{ maxWidth: 980, margin: '0 auto', padding: 20 }}>
+    <div style={{ maxWidth: 980, margin: '0 auto', padding: 'clamp(12px, 4vw, 20px)',
+      paddingTop: 'calc(env(safe-area-inset-top, 0px) + 14px)', minHeight: '100vh' }}>
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
         <div style={{ fontWeight: 700, fontSize: 20 }}>THOR · CEO Cockpit</div>
         <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 20,

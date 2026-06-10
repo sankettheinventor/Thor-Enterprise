@@ -186,11 +186,19 @@ def boot() -> list[tuple[object, int]]:
     dashboard_api.bind(dashboard)
     sentinel_api.bind(sentinel)
     selfaudit_api.bind(selfaudit)
-    dashboard_api.app.add_api_route(       # serve the cockpit + shared theme at :7080/
+    dashboard_api.app.add_api_route(       # serve the static cockpit + shared theme at :7080/
         "/", lambda: FileResponse(str(COCKPIT)), include_in_schema=False)
     dashboard_api.app.add_api_route(
         "/dashboard.css", lambda: FileResponse(str(DASH_CSS)), include_in_schema=False)
-    print("[thor] HTTP      surfaces bound; cockpit + design system mounted at :7080/")
+    # THOR Mobile: the React cockpit (laptop + phone, installable PWA) at :7080/app/ — same Manager truth,
+    # real-time via /stream. Served only if built (`cd ui && npm ci && npm run build`).
+    ui_dist = REPO / "ui" / "dist"
+    if ui_dist.is_dir():
+        from fastapi.staticfiles import StaticFiles
+        dashboard_api.app.mount("/app", StaticFiles(directory=str(ui_dist), html=True), name="cockpit")
+        print(f"[thor] HTTP      surfaces bound; cockpit at :7080/  +  React PWA at :7080/app/")
+    else:
+        print("[thor] HTTP      surfaces bound; cockpit at :7080/  (build ui/ for the React PWA at /app/)")
 
     return [
         (manager_api.app, PORTS["manager"]),

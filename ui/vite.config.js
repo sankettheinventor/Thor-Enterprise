@@ -7,6 +7,7 @@ const proxied = ['/state', '/kanban', '/rooms', '/cards', '/audit', '/cost', '/f
                  '/lies', '/health', '/operator', '/approve', '/task']
 
 export default defineConfig({
+  base: '/app/', // the plane serves the cockpit (laptop + phone) under /app/
   plugins: [react()],
   build: { outDir: 'dist', emptyOutDir: true },
   server: {
