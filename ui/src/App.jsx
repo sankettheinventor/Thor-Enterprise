@@ -9,15 +9,27 @@ const C = { bg: '#0b0d10', card: '#14181d', line: '#232a31', ink: '#e7eaee', ink
 export default function App() {
   const [tab, setTab] = useState('Watch')
   const [connected, setConnected] = useState(true) // T7: fail-closed — signing disabled when stale
-  const [data, setData] = useState({ summary: null, kanban: null, cards: [], audit: [], lies: [] })
+  const [data, setData] = useState({ summary: null, kanban: null, cards: [], audit: [], lies: {},
+    rooms: [], cost: {}, findings: [], health: {} })
   const [toast, setToast] = useState(null)
 
   const refresh = useCallback(async () => {
     try {
-      const [summary, kanban, cards, audit, lies] = await Promise.all([
+      // the SAME surfaces the laptop cockpit reads — full parity, one Manager truth
+      const [summary, kanban, cards, audit, lies, rooms, cost, findings, health] = await Promise.all([
         get('/state/summary'), get('/kanban'), get('/cards'), get('/audit/feed'), get('/lies'),
+        get('/rooms/live'), get('/cost'), get('/findings'), get('/health/system'),
       ])
-      setData({ summary, kanban, cards: cards.cards || cards || [], audit: audit.events || audit || [], lies: lies.lies || lies || [] })
+      setData({
+        summary, kanban,
+        cards: cards.cards || cards || [],
+        audit: audit.events || audit || [],
+        lies: lies || {},
+        rooms: rooms.rooms || rooms || [],
+        cost: cost || {},
+        findings: findings.findings || findings || [],
+        health: health || {},
+      })
       setConnected(true)
     } catch {
       setConnected(false) // disconnected → the picture may be stale → signing is disabled
@@ -78,7 +90,7 @@ export default function App() {
       {tab === 'Direct' && <Direct onDone={refresh} setToast={setToast} />}
       {tab === 'Watch' && <Watch data={data} />}
       {tab === 'Decide' && <Decide cards={data.cards} connected={connected} onSign={sign} />}
-      {tab === 'Audit' && <Audit audit={data.audit} lies={data.lies} />}
+      {tab === 'Audit' && <Audit data={data} />}
 
       {toast && <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
         background: C.card, border: `1px solid ${C.line}`, padding: '10px 18px', borderRadius: 10 }}>{toast}</div>}
@@ -117,17 +129,61 @@ function Direct({ onDone, setToast }) {
 function Watch({ data }) {
   const k = data.kanban || {}
   const cols = [['Backlog', k.backlog], ['Building', k.building], ['QA', k.in_qa], ['Awaiting sign', k.awaiting_signature], ['Merged', k.done]]
+  const rooms = data.rooms || []
+  const h = data.health || {}
+  const sa = h.selfaudit || h.self_audit || {}
+  const cost = data.cost || {}
   return (
-    <Panel title="Watch" sub="The line, live — counts from the Manager's kanban (not the cook's claim).">
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {cols.map(([name, ids]) => (
-          <div key={name} style={{ flex: '1 1 150px', background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, padding: 12 }}>
-            <div style={{ fontSize: 12, color: C.ink3 }}>{name}</div>
-            <div style={{ fontSize: 24, fontWeight: 700 }}>{(ids || []).length}</div>
-          </div>
-        ))}
-      </div>
-    </Panel>
+    <>
+      <Panel title="Watch" sub="The line, live — counts from the Manager's kanban (not the cook's claim).">
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {cols.map(([name, ids]) => (
+            <div key={name} style={{ flex: '1 1 130px', background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, padding: 12 }}>
+              <div style={{ fontSize: 12, color: C.ink3 }}>{name}</div>
+              <div style={{ fontSize: 24, fontWeight: 700 }}>{(ids || []).length}</div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+
+      <Panel title="Live rooms" sub="Sealed rooms the cooks are working in right now.">
+        {rooms.length === 0 ? <div style={{ color: C.ink3 }}>No active rooms.</div>
+          : rooms.map((r) => (
+            <div key={r.room_id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderTop: `1px solid ${C.line}`, fontSize: 13 }}>
+              <span><b>{r.feature_id}</b> <span style={{ color: C.ink3 }}>{r.stage}</span></span>
+              <span style={{ color: C.ink3 }}>{r.status || ''} {r.address ? `· ${r.address}` : ''}</span>
+            </div>
+          ))}
+      </Panel>
+
+      <Panel title="System health" sub="Governance is alive + fail-closed; the auditor runs at zero frontier cost.">
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
+          <Stat label="Sentinel" value={(h.sentinel?.halted ? 'HALTED' : 'alive')} good={!h.sentinel?.halted} />
+          <Stat label="Fail-closed" value={h.sentinel?.fail_closed ? 'yes' : 'no'} good={!!h.sentinel?.fail_closed} />
+          <Stat label="Alarms" value={h.sentinel?.alarms ?? 0} good={(h.sentinel?.alarms ?? 0) === 0} />
+          <Stat label="Auditor model" value={sa.model || 'deterministic'} good />
+          <Stat label="Frontier calls" value={sa.frontier_calls ?? 0} good={(sa.frontier_calls ?? 0) === 0} />
+          <Stat label="Meta-trust" value={h.meta_trust != null ? `${Math.round(h.meta_trust * 100)}%` : '—'} good />
+        </div>
+      </Panel>
+
+      <Panel title="Cost" sub="Token budget across the line.">
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
+          <Stat label="Spent" value={cost.spent ?? cost.total_spent ?? 0} good />
+          <Stat label="Cap" value={cost.cap ?? cost.budget_cap ?? '—'} good />
+          <Stat label="Features" value={(cost.by_feature ? Object.keys(cost.by_feature).length : (data.summary ? Object.keys(data.summary.rooms || {}).length : 0))} good />
+        </div>
+      </Panel>
+    </>
+  )
+}
+
+function Stat({ label, value, good }) {
+  return (
+    <div style={{ flex: '1 1 120px', background: C.bg, border: `1px solid ${C.line}`, borderRadius: 10, padding: 12 }}>
+      <div style={{ fontSize: 11, color: C.ink3 }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 600, color: good ? C.ink : C.warn }}>{String(value)}</div>
+    </div>
   )
 }
 
@@ -151,16 +207,35 @@ function Decide({ cards, connected, onSign }) {
   )
 }
 
-function Audit({ audit, lies }) {
+function Audit({ data }) {
+  const lies = data.lies || {}
+  const recent = lies.recent || []
+  const findings = data.findings || []
+  const audit = data.audit || []
   return (
     <>
-      <Panel title="Lies caught" sub="Fabricated claims the verdict caught from reality.">
-        {(lies || []).length === 0 ? <div style={{ color: C.ink3 }}>None.</div>
-          : lies.map((l, i) => <div key={i} style={{ padding: '6px 0', color: C.warn }}>{l.message || l.signals?.[0] || JSON.stringify(l)}</div>)}
+      <Panel title={`Lies caught${lies.total ? ` (${lies.total})` : ''}`} sub="Fabricated claims the verdict caught from reality — not the cook's word.">
+        {recent.length === 0 ? <div style={{ color: C.ink3 }}>None — claims have matched reality.</div>
+          : recent.map((l, i) => (
+            <div key={i} style={{ padding: '6px 0', borderTop: `1px solid ${C.line}`, fontSize: 13 }}>
+              <b style={{ color: C.warn }}>{l.feature_id || l.container}</b>{' '}
+              <span style={{ color: C.ink3 }}>{(l.signals || [])[0] || ''}</span>
+            </div>
+          ))}
       </Panel>
+
+      <Panel title="Self-audit findings" sub="What the background inspector (Qwen) flagged in the codebase.">
+        {findings.length === 0 ? <div style={{ color: C.ink3 }}>No open findings.</div>
+          : findings.map((f, i) => (
+            <div key={i} style={{ padding: '6px 0', borderTop: `1px solid ${C.line}`, fontSize: 13 }}>
+              <span style={{ color: C.ink3 }}>{f.feature_id || ''}</span> {f.description || JSON.stringify(f)}
+            </div>
+          ))}
+      </Panel>
+
       <Panel title="Audit feed" sub="Every signed, hash-chained event from the Manager's ledger.">
         <div style={{ maxHeight: 320, overflow: 'auto' }}>
-          {(audit || []).slice(-60).reverse().map((e, i) => (
+          {audit.slice(-60).reverse().map((e, i) => (
             <div key={i} style={{ display: 'flex', gap: 10, padding: '5px 0', borderTop: `1px solid ${C.line}`, fontSize: 13 }}>
               <span style={{ color: C.ink3, minWidth: 32 }}>#{e.seq}</span>
               <span style={{ color: C.brand }}>{e.event_type}</span>
