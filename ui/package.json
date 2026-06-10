@@ -1,0 +1,22 @@
+{
+  "name": "@thor-enterprise/cockpit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "THOR Enterprise — CEO Cockpit (React). Pure presentation over the Manager DashboardAPI; the operator's Ed25519 key signs in the browser and never leaves the device.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@noble/ed25519": "2.1.0",
+    "@noble/hashes": "1.4.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.3.4",
+    "vite": "5.4.11"
+  }
+}

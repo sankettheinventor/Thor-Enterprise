@@ -1,0 +1,24 @@
+{
+  "name": "thor-enterprise",
+  "version": "1.0.0",
+  "description": "THOR Enterprise — a governance cage for AI coding agents. A thin, ZERO-dependency Node launcher that boots the Python + Docker control plane. No postinstall scripts (see docs/NPM-SECURITY.md).",
+  "bin": {
+    "thor": "bin/thor.js"
+  },
+  "files": [
+    "bin/thor.js",
+    "docker-compose.prod.yml",
+    "DEPLOYMENT.md",
+    "docs/NPM-SECURITY.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "preinstall": "",
+    "postinstall": ""
+  },
+  "dependencies": {},
+  "license": "UNLICENSED",
+  "private": true
+}
