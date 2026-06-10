@@ -59,6 +59,7 @@ def provision_room(
     mem: str = config.DEFAULT_MEM,
     network_mode: str = "sealed",
     extra_env: dict | None = None,
+    image: str | None = None,
 ) -> dict:
     """
     Create one room and return its descriptor (PRD §6.1 provision response shape).
@@ -103,7 +104,7 @@ def provision_room(
         env.update(extra_env)
 
     container = client.containers.run(
-        config.ROOM_IMAGE,
+        image or config.ROOM_IMAGE,    # the chosen cook's room image (e.g. thor-room-claude); default room
         # ENTRYPOINT is /bin/bash, so pass `-c "sleep infinity"` to keep the room alive
         # (a bare "sleep infinity" would be read by bash as a filename and exit). Placeholder
         # until the cook's agent-server becomes the entrypoint (M2).
