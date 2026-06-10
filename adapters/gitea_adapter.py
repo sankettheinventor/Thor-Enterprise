@@ -12,8 +12,13 @@ This is the ONLY file (with agt_adapter.py) allowed to import an external backbo
 """
 from __future__ import annotations
 
+import json
+import os
 import subprocess
+import urllib.error
+import urllib.request
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def _git(repo: str, *args: str) -> str:
@@ -136,8 +141,79 @@ class LocalGitBackend(GitPort):
         return issue
 
 
+class GiteaServerBackend(GitPort):
+    """GitPort over a LIVE Gitea server — real branches/PRs/merges via the Gitea HTTP API. THOR still
+    DECIDES (Signature-3 gates the merge) and runs its OWN tests (M1/M4 in `reality.run_test`); Gitea
+    only EXECUTES, it never judges. stdlib `urllib` only — a security product adds NO new dependency.
+    Selected when THOR_GIT_BACKEND=gitea (GITEA_URL / GITEA_TOKEN / GITEA_OWNER from `.env`)."""
+
+    def __init__(self, base_url: str | None = None, token: str | None = None, owner: str | None = None) -> None:
+        self.base = (base_url or os.environ.get("GITEA_URL", "http://localhost:3000")).rstrip("/")
+        self.token = token or os.environ.get("GITEA_TOKEN", "")
+        self.owner = owner or os.environ.get("GITEA_OWNER", "thor")
+        self._prs: dict[str, str] = {}   # pr_id -> gitea repo name (so merge can find the repo)
+
+    def _api(self, method: str, path: str, body: dict | None = None) -> tuple[int, object]:
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(f"{self.base}/api/v1{path}", data=data, method=method,
+                                     headers={"Authorization": f"token {self.token}",
+                                              "Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=15) as r:   # noqa: S310 (trusted internal Gitea)
+                txt = r.read().decode()
+                return r.status, (json.loads(txt) if txt else {})
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read().decode() or "{}")
+
+    def _name(self, repo: str, meta: dict | None = None) -> str:
+        return (meta or {}).get("gitea_repo") or os.environ.get("GITEA_REPO") or os.path.basename(repo.rstrip("/"))
+
+    def _remote(self, name: str) -> str:
+        u = urlsplit(self.base)
+        return f"{u.scheme}://{self.owner}:{self.token}@{u.netloc}/{self.owner}/{name}.git"
+
+    def open_pr(self, repo: str, branch: str, meta: dict) -> dict:
+        name = self._name(repo, meta)
+        subprocess.run(["git", "-C", repo, "push", "-f", self._remote(name), "main", branch],
+                       capture_output=True, check=True)
+        code, pr = self._api("POST", f"/repos/{self.owner}/{name}/pulls",
+                             {"head": branch, "base": "main", "title": f"feature {meta.get('feature_id', '')}"})
+        if not isinstance(pr, dict) or pr.get("number") is None:
+            raise RuntimeError(f"gitea open_pr failed (HTTP {code}): {str(pr)[:120]}")
+        pr_id = str(pr["number"])
+        self._prs[pr_id] = name
+        return {"pr_id": pr_id, "branch": branch, "gitea_repo": name, "url": pr.get("html_url")}
+
+    def ci_result(self, repo: str, branch: str) -> dict:
+        return LocalGitBackend().ci_result(repo, branch)   # representative; the verdict runs the REAL tests
+
+    def merge(self, repo: str, pr_id: str, signature_ref: str | None, base: str = "main") -> dict:
+        if not signature_ref:
+            return {"merged": False, "reason": "no Signature 3 — THOR has not authorized the merge"}
+        name = self._prs.get(pr_id) or self._name(repo)
+        code, res = self._api("POST", f"/repos/{self.owner}/{name}/pulls/{pr_id}/merge", {"Do": "merge"})
+        if code in (200, 201):
+            _, pr = self._api("GET", f"/repos/{self.owner}/{name}/pulls/{pr_id}")
+            return {"merged": True, "sha": (pr or {}).get("merge_commit_sha")}
+        return {"merged": False, "reason": f"gitea merge HTTP {code}: {str(res)[:120]}"}
+
+    def list_issues(self, repo: str) -> list[dict]:
+        code, issues = self._api("GET", f"/repos/{self.owner}/{self._name(repo)}/issues?state=all")
+        if not isinstance(issues, list):
+            return []
+        return [{"number": str(i.get("number")), "title": i.get("title"), "open": i.get("state") == "open"}
+                for i in issues]
+
+
 # Default backend instance — module-level THOR-vocabulary delegators keep M1–M11 callers unchanged.
-_default = LocalGitBackend()
+# Strangler swap: THOR_GIT_BACKEND=gitea selects the LIVE Gitea server; default stays local-git.
+def _make_default() -> GitPort:
+    if os.environ.get("THOR_GIT_BACKEND", "").lower() == "gitea":
+        return GiteaServerBackend()
+    return LocalGitBackend()
+
+
+_default = _make_default()
 
 
 def open_pr(repo: str, branch: str, meta: dict | None = None) -> dict:

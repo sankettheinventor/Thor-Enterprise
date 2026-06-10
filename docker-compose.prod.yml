@@ -22,6 +22,22 @@ services:
       timeout: 3s
       retries: 30
 
+  # Real git host (P5). THOR DECIDES (Sig-3 gates merge) + runs its OWN tests; Gitea only EXECUTES.
+  gitea:
+    image: gitea/gitea:1.21
+    environment:
+      GITEA__database__DB_TYPE: sqlite3
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__server__OFFLINE_MODE: "true"
+    volumes:
+      - thor_gitea:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/v1/version || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
   controlplane:
     build:
       context: .
@@ -36,6 +52,11 @@ services:
       THOR_API_TOKEN: ${THOR_API_TOKEN:?set a strong THOR_API_TOKEN before deploying}
       THOR_SELFAUDIT_PASSWORD: ${THOR_SELFAUDIT_PASSWORD:-selfaudit}
       THOR_BIND_HOST: "0.0.0.0"        # surfaces must bind 0.0.0.0 to be reachable through ports
+      # P5: point THOR at the live Gitea (leave THOR_GIT_BACKEND unset to use local-git).
+      THOR_GIT_BACKEND: ${THOR_GIT_BACKEND:-local}
+      GITEA_URL: http://gitea:3000
+      GITEA_OWNER: ${GITEA_OWNER:-thor}
+      GITEA_TOKEN: ${GITEA_TOKEN:-}
     ports:
       - "7080:7080"   # cockpit / dashboard
       - "7100:7100"   # manager
@@ -49,3 +70,4 @@ services:
 
 volumes:
   thor_pgdata:
+  thor_gitea:
