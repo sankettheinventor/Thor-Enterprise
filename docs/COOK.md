@@ -67,6 +67,11 @@ out-of-scope + traversal writes are DENIED (exit 2), and the managed settings ar
   those hosts and denying all else; a cook with no allowlist runs fully `sealed`. The cook carries its OWN
   credential in its env (above); THOR injects no model-host secret. Proven live: `tools/qa/prove_cook_onedoor.py`
   (allowlisted host → 200, every other host → BLOCKED, no secret in the room env).
-- **Cook-runner:** `CookRunner.run()` provisions the room with `runtime.image()` + `runtime.env()`, runs
-  `runtime.command(slice)` as the unprivileged cook, returns `{room_id, exit_code, network_mode, output}`.
-  (C2 — wiring this runner into `BuildStage` as the default for a real `THOR_COOK` runtime — is the next step.)
+- **Cook-runner (LIVE, C2):** `CookRunner.run()` provisions the room with `runtime.image()` + `runtime.env()`,
+  runs `runtime.command(slice)` as the unprivileged cook, returns `{room_id, exit_code, network_mode, output}`.
+  `BuildStage` uses it whenever a real runtime is selected (`THOR_COOK` set) — the agent builds IN the room,
+  governed by the in-room hook + walls + one-door egress, and the **verdict judges from reality** (the control
+  plane never cleans/retries/supplements). The deterministic gated suite leaves `THOR_COOK` unset → `ScriptedCook`.
+  Proven live (`tools/qa/prove_c2_realcook.py`): honest build → `done`; a lying stub → `not_done` (M1/M4 run the
+  real test); an out-of-scope write → `not_done` (R2 containment). The **frontier Claude Code** live run is the
+  same seam, deferred only for a `CLAUDE_CODE_OAUTH_TOKEN` (none in the CI sandbox).

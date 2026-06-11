@@ -119,12 +119,21 @@ class BuildStage(Stage):
     def run(self, feature: dict, repo: str, manager=None, cook=None, **_) -> dict:
         fid = feature["feature_id"]
         branch = f"feature/{fid}"
+        # CTO plans at task-start (shared, rare): scope is PLAN-OWNED, deny-all if undeclared.
+        plan = cto_stub.plan_task(fid, "build", feature=feature)
+
+        # C2: when a REAL runtime is selected (THOR_COOK explicitly set), the agent builds INSIDE the room
+        # via CookRunner — governed by the in-room PreToolUse hook + the walls + one-door egress (C1), and
+        # judged by the verdict-from-reality. The gated suite leaves THOR_COOK unset and uses the
+        # deterministic ScriptedCook + host-side InRoomProxy path below (the explicit gated default).
+        _rt = os.environ.get("THOR_COOK")
+        if cook is None and _rt and _rt not in ("scripted", "puppet"):
+            return self._run_real_cook(feature, repo, fid, branch, plan, manager)
+
         room = manager.provision_room(fid, task_type="build", branch=branch, worktree_host_path=repo)
         room_id = room["room_id"]
 
-        # CTO plans at task-start (shared, rare): scope is PLAN-OWNED, deny-all if undeclared.
         # The plan yields the FrozenPolicy the room is sealed with (Integration PRD S2).
-        plan = cto_stub.plan_task(fid, "build", feature=feature)
         policy = FrozenPolicy(room_id=room_id, scope_files=tuple(plan["scope_files"]),
                               forbidden_patterns=tuple(plan["forbidden_patterns"]), frozen_at=0.0)
         # Loaded HOST-SIDE only — the policy is NEVER handed into the room; the cook can neither
@@ -156,6 +165,35 @@ class BuildStage(Stage):
              "-m", f"implement {feature.get('title', fid)} [{fid}]")
         return {"feature_id": fid, "branch": branch, "room_id": room_id, "claim_done": True,
                 "_room": room, "decisions": decisions, "policy_hash": policy.policy_hash}
+
+    def _run_real_cook(self, feature: dict, repo: str, fid: str, branch: str, plan: dict, manager) -> dict:
+        """C2 — a REAL agent (the THOR_COOK runtime) builds INSIDE the room via CookRunner. The room is
+        provisioned with the feature slice (scope at /task/feature.json, read-only) + one-door egress; the
+        in-room PreToolUse hook enforces decide-before, the walls cage it, and the GovEngine verdict judges
+        from reality. The control plane does NOT clean, retry, or supplement the cook's output."""
+        from cook.runner import CookRunner
+
+        _git(repo, "checkout", "-q", "-B", branch)
+        slice_ = {**{k: v for k, v in feature.items() if k != "code_files"},
+                  "feature_id": fid, "title": feature.get("title", fid),
+                  "scope_files": list(plan["scope_files"]),
+                  "forbidden_patterns": list(plan["forbidden_patterns"])}
+        runner = CookRunner()
+        result = runner.run(slice_, worktree_host_path=repo)        # the agent builds in /work, in-room
+        _git(repo, "add", "-A")
+        _git(repo, "-c", "user.email=cook@thor", "-c", "user.name=cook", "commit", "-q",
+             "-m", f"implement {feature.get('title', fid)} [{fid}]")
+        if manager is not None:
+            try:
+                manager._record("cook.ran", {"feature_id": fid, "room_id": result["room_id"],
+                                "runtime": runner.runtime.name, "network_mode": result.get("network_mode"),
+                                "exit_code": result.get("exit_code")}, room_id=result["room_id"], feature_id=fid)
+            except Exception:  # noqa: BLE001 — audit best-effort; the verdict is the enforcement
+                pass
+        return {"feature_id": fid, "branch": branch, "room_id": result["room_id"], "claim_done": True,
+                "_room": {"room_id": result["room_id"], "_mount_plan": result.get("_mount_plan")},
+                "decisions": {}, "runtime": runner.runtime.name,
+                "network_mode": result.get("network_mode"), "_cook_output": result.get("output")}
 
     def edge_check(self, output: dict) -> tuple[bool, str]:
         ok = output.get("claim_done") and bool(output.get("branch"))
