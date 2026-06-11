@@ -112,6 +112,7 @@ class DashboardService:
             open_bugs = sum(1 for b in self.manager.list_bugs(f["feature_id"]) if b.get("status") == "open")
             out.append({"feature_id": f["feature_id"], "title": f.get("title") or f["feature_id"],
                         "status": status, "stage": idx, "stages": list(self._LADDER),
+                        "priority": f.get("priority") if f.get("priority") is not None else 3,
                         "progress": round(100 * idx / (len(self._LADDER) - 1)), "open_bugs": open_bugs})
         return sorted(out, key=lambda x: (-x["progress"], x["feature_id"]))
 
