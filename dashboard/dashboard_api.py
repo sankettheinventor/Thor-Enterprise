@@ -153,6 +153,12 @@ def remove_feature(feature_id: str, _: None = Depends(require_token)):
     return {"ok": True, "removed": feature_id}
 
 
+@app.post("/features/{feature_id}/stop")
+def stop_feature(feature_id: str, _: None = Depends(require_token)):
+    """Stop work on a task: destroy its active room and move it back to 'ready' (branch + ledger kept)."""
+    return _service.stop_feature(feature_id)
+
+
 @app.post("/operator/register")
 def register_operator(k: OperatorKey, _: None = Depends(require_token)):
     """Register an authorized signer (the CEO's operator key) — only registered keys may sign."""

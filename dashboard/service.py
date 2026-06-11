@@ -211,6 +211,21 @@ class DashboardService:
         self._action("reject", {"card_id": card_id, "verified": result["verified"]})
         return result
 
+    def stop_feature(self, feature_id: str) -> dict:
+        """Stop work on a task: destroy any active room for the feature (physical halt) and move it back
+        to 'ready'. The branch + ledger are preserved; only the running container goes."""
+        stopped = []
+        for rid, r in self.manager.state_summary()["rooms"].items():
+            if r.get("feature_id") == feature_id and r.get("status") == "working":
+                try:
+                    self.manager.destroy_room(rid)
+                except Exception:  # noqa: BLE001 — best-effort teardown; never crash the surface
+                    pass
+                stopped.append(rid)
+        self.manager.set_feature_status(feature_id, "ready")
+        self._action("stop", {"feature_id": feature_id, "rooms": stopped})
+        return {"ok": True, "stopped": stopped}
+
     def dry_run(self) -> dict:
         if self.scheduler_factory is None:
             return {"waves": [], "cost_estimate": 0, "provisioned": 0}

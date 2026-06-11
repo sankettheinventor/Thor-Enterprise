@@ -3,31 +3,37 @@ import { del, get, post } from './api.js'
 import { rejectCard, signCard } from './sign.js'
 import { enablePush, pushSupported } from './push.js'
 
-const TABS = ['Watch', 'Rooms', 'Decide', 'Audit', 'Direct']
-const LADDER = ['backlog', 'ready', 'building', 'in_qa', 'awaiting_signature', 'done']
-const STAGE_LABEL = { backlog: 'Backlog', ready: 'Ready', building: 'Build', in_qa: 'QA', awaiting_signature: 'Sign', done: 'Done' }
+// our SDLC statuses -> board columns
+const COLUMNS = [
+  { key: 'backlog', label: 'Backlog', dot: 'var(--ink-4)', has: (s) => ['backlog', 'ready'].includes(s) },
+  { key: 'building', label: 'Building', dot: 'var(--tag-feature)', has: (s) => ['building', 'in_qa'].includes(s) },
+  { key: 'sign', label: 'Your call', dot: 'var(--warn)', has: (s) => s === 'awaiting_signature' },
+  { key: 'done', label: 'Shipped', dot: 'var(--ok)', has: (s) => s === 'done' },
+]
+const STATUS_LABEL = { backlog: 'Backlog', ready: 'Ready', building: 'Building', in_qa: 'QA', awaiting_signature: 'Awaiting you', done: 'Shipped' }
 const PRIOS = [['P0', 0], ['P1', 1], ['P2', 2], ['P3', 3]]
+const isLive = (s) => ['building', 'in_qa'].includes(s)
 
 export default function App() {
-  const [tab, setTab] = useState('Watch')
   const [connected, setConnected] = useState(true)
-  const [sel, setSel] = useState(null) // {kind:'feature'|'room'|'card', id}
-  const [toast, setToast] = useState(null)
-  const [data, setData] = useState({ kanban: {}, cards: [], audit: [], lies: {}, rooms: [], cost: {},
-    findings: [], health: {}, activity: {}, progress: [], bugs: [] })
+  const [healthOpen, setHealthOpen] = useState(false)
+  const [sel, setSel] = useState(null)        // selected feature_id
+  const [tab, setTab] = useState('overview')
+  const [search, setSearch] = useState('')
+  const [prio, setPrio] = useState(new Set())
+  const [toasts, setToasts] = useState([])
+  const [d, setD] = useState({ features: [], rooms: [], activity: {}, audit: [], bugs: [], cards: [], health: {}, lies: {} })
 
   const refresh = useCallback(async () => {
     try {
-      const r = await Promise.all([
-        get('/kanban'), get('/cards'), get('/audit/feed'), get('/lies'), get('/rooms/live'),
-        get('/cost'), get('/findings'), get('/health/system'), get('/rooms/activity'), get('/progress'), get('/bugs'),
+      const [progress, rooms, activity, audit, bugs, cards, health, lies] = await Promise.all([
+        get('/progress'), get('/rooms/live'), get('/rooms/activity'), get('/audit/feed'),
+        get('/bugs'), get('/cards'), get('/health/system'), get('/lies'),
       ])
-      const [kanban, cards, audit, lies, rooms, cost, findings, health, activity, progress, bugs] = r
-      setData({
-        kanban: kanban || {}, cards: cards.cards || cards || [], audit: audit.events || audit || [],
-        lies: lies || {}, rooms: rooms.rooms || rooms || [], cost: cost || {},
-        findings: findings.findings || findings || [], health: health || {}, activity: activity || {},
-        progress: progress.features || [], bugs: bugs.bugs || [],
+      setD({
+        features: progress.features || [], rooms: rooms.rooms || rooms || [], activity: activity || {},
+        audit: audit.events || audit || [], bugs: bugs.bugs || [], cards: cards.cards || cards || [],
+        health: health || {}, lies: lies || {},
       })
       setConnected(true)
     } catch { setConnected(false) }
@@ -46,294 +52,257 @@ export default function App() {
     return () => { if (es) es.close(); clearInterval(t) }
   }, [refresh])
 
-  const flash = (m) => { setToast(m); setTimeout(() => setToast(null), 3500) }
+  const toast = (msg) => { const id = Math.random(); setToasts((t) => [...t, { id, msg }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500) }
+
+  // helpers
+  const roomFor = (fid) => d.rooms.find((r) => r.feature_id === fid)
+  const filesFor = (fid) => { const r = roomFor(fid); return (r && d.activity[r.room_id]) || [] }
+  const cardFor = (fid) => d.cards.find((c) => c.feature_id === fid && (c.status || 'open') === 'open')
 
   const act = {
-    sign: async (id) => { if (!connected) return; const r = await signCard(id); flash(r.verified ? `Signed — ${id}` : `Rejected: ${r.reason || 'unknown'}`); refresh() },
-    reject: async (id) => { if (!connected) return; const r = await rejectCard(id); flash(r.verified ? `Declined — ${id}` : `Rejected: ${r.reason || 'unknown'}`); refresh() },
-    prioritize: async (fid, p) => { await post(`/commands/prioritize`, { feature_id: fid, priority: p }); flash(`Priority → P${p}`); refresh() },
-    markReady: async (fid) => { await post(`/commands/mark_ready`, { feature_id: fid }); flash('Marked ready'); refresh() },
-    remove: async (fid) => { if (!window.confirm(`Remove ${fid}? This is recorded in the ledger.`)) return; await del(`/features/${fid}`); setSel(null); flash(`Removed ${fid}`); refresh() },
-    assign: async (title) => { const r = await post('/features', { title }); flash(r.feature_id ? `Assigned — ${r.feature_id}` : 'Assign failed'); refresh(); return r },
+    prioritize: async (fid, p) => { await post('/commands/prioritize', { feature_id: fid, priority: p }); toast(`Priority → P${p}`); refresh() },
+    markReady: async (fid) => { await post('/commands/mark_ready', { feature_id: fid }); toast('Marked ready'); refresh() },
+    stop: async (fid) => { await post(`/features/${fid}/stop`); toast(`Stopped ${fid}`); refresh() },
+    remove: async (fid) => { if (!window.confirm(`Remove ${fid}? Recorded in the ledger.`)) return; await del(`/features/${fid}`); setSel(null); toast(`Removed ${fid}`); refresh() },
+    sign: async (fid) => { const c = cardFor(fid); if (!c || !connected) return; const r = await signCard(c.card_id); toast(r.verified ? `Signed ${fid}` : `Rejected: ${r.reason || '?'}`); refresh() },
+    reject: async (fid) => { const c = cardFor(fid); if (!c || !connected) return; const r = await rejectCard(c.card_id); toast(r.verified ? `Declined ${fid}` : `Rejected: ${r.reason || '?'}`); refresh() },
+    newTask: async () => { const t = window.prompt('New task — feature title:'); if (t && t.trim()) { const r = await post('/features', { title: t.trim() }); toast(r.feature_id ? `Created ${r.feature_id}` : 'Failed'); refresh() } },
   }
+
+  // filter
+  const visible = d.features.filter((f) => {
+    if (prio.size && !prio.has(f.priority)) return false
+    if (search.trim()) { const q = search.toLowerCase(); if (!`${f.feature_id} ${f.title}`.toLowerCase().includes(q)) return false }
+    return true
+  })
+
+  const h = d.health || {}; const alarms = h.sentinel?.alarms ?? 0; const halted = h.sentinel?.halted
+  const healthClass = halted ? 'alert' : alarms ? 'warn' : ''
+  const shipped = d.features.filter((f) => f.status === 'done').length
+  const live = d.features.filter((f) => isLive(f.status)).length
 
   return (
     <div className="app">
-      <header className="between" style={{ marginBottom: 16 }}>
-        <div className="h1">THOR · Cockpit</div>
-        <span className={`badge ${connected ? 'ok' : 'bad'}`}>
-          <span className="dot" style={{ background: connected ? 'var(--ok)' : 'var(--bad)' }} />
-          {connected ? 'live · sign enabled' : 'disconnected · signing off'}
-        </span>
-      </header>
+      <aside className="sidebar">
+        <div className="brand"><div className="brand-logo">T</div><div className="brand-name">THOR</div></div>
+        <div className="side-label">Workspace</div>
+        <div className="nav-item active">Task Board</div>
+        <div className="nav-item">Your call<span className="nav-count">{d.cards.filter((c) => (c.status || 'open') === 'open').length}</span></div>
+        <div className="nav-item">Bugs<span className="nav-count">{d.bugs.length}</span></div>
+        {pushSupported() && <div className="nav-item" onClick={async () => { const r = await enablePush(); toast(r.ok ? 'Notifications on' : `Push: ${r.reason}`) }}>🔔 Notifications</div>}
+        <div className="side-foot"><div className="side-avatar">S</div><div style={{ fontWeight: 500 }}>You</div></div>
+      </aside>
 
-      <nav className="tabs">
-        {TABS.map((t) => <button key={t} className={`tab ${tab === t ? 'active' : ''}`} onClick={() => setTab(t)}>{t}</button>)}
-      </nav>
-
-      {tab === 'Watch' && <Watch data={data} open={setSel} />}
-      {tab === 'Rooms' && <Rooms data={data} open={setSel} />}
-      {tab === 'Decide' && <Decide cards={data.cards} connected={connected} act={act} open={setSel} />}
-      {tab === 'Audit' && <Audit data={data} />}
-      {tab === 'Direct' && <Direct data={data} act={act} open={setSel} flash={flash} />}
-
-      <Drawer sel={sel} data={data} connected={connected} act={act} close={() => setSel(null)} />
-      {toast && <div className="toast">{toast}</div>}
-    </div>
-  )
-}
-
-/* ---------- small primitives ---------- */
-function Panel({ title, sub, right, children }) {
-  return (
-    <section className="card">
-      <div className="panel-h"><div className="h2">{title}</div>{right}</div>
-      {sub && <div className="panel-sub">{sub}</div>}
-      {children}
-    </section>
-  )
-}
-const Empty = ({ ico = '✓', children }) => <div className="empty"><div className="ico">{ico}</div><div style={{ marginTop: 6 }}>{children}</div></div>
-const Stat = ({ label, value, tone }) => (
-  <div className="stat"><div className="label truncate">{label}</div><div className={`v sm`} style={{ color: tone }}>{String(value)}</div></div>
-)
-function Timeline({ status }) {
-  const cur = Math.max(0, LADDER.indexOf(status))
-  return (
-    <div className="timeline">
-      {LADDER.map((s, i) => (
-        <div key={s} className={`tl-step ${i < cur ? 'on' : ''} ${i === cur ? 'cur' : ''}`}>
-          <div className="tl-bar" /><div className="tl-node">{i < cur ? '✓' : i + 1}</div>
-          <div className="tl-label">{STAGE_LABEL[s]}</div>
-        </div>
-      ))}
-    </div>
-  )
-}
-const prioBadge = (p) => <span className={`badge ${p === 0 ? 'bad' : p === 1 ? 'warn' : ''}`}>P{p ?? 3}</span>
-
-/* ---------- tabs ---------- */
-function Watch({ data, open }) {
-  const k = data.kanban || {}
-  const cols = [['Backlog', k.backlog], ['Build', k.building], ['QA', k.in_qa], ['Sign', k.awaiting_signature], ['Merged', k.done]]
-  const h = data.health || {}; const sa = h.selfaudit || h.self_audit || {}; const cost = data.cost || {}
-  return (
-    <>
-      <Panel title="The line" sub="Counts from the Manager's kanban — reality, not the cook's claim.">
-        <div className="grid">{cols.map(([n, ids]) => <div key={n} className="stat"><div className="label">{n}</div><div className="v">{(ids || []).length}</div></div>)}</div>
-      </Panel>
-      <Panel title="Features" sub="Tap a feature to open it. Progress is event-sourced from the SDLC.">
-        {data.progress.length === 0 ? <Empty ico="◌">No features yet — assign one from Direct.</Empty>
-          : data.progress.map((f) => (
-            <div key={f.feature_id} className="list-row click" onClick={() => open({ kind: 'feature', id: f.feature_id })}>
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div className="row" style={{ gap: 8 }}>{prioBadge(f.priority)}<b className="truncate" title={f.title}>{f.title}</b></div>
-                <div className="progress" style={{ marginTop: 6 }}><i className={f.status === 'done' ? 'done' : ''} style={{ width: `${f.progress}%` }} /></div>
-              </div>
-              <div style={{ textAlign: 'right', flex: 'none' }}>
-                <span className="badge">{STAGE_LABEL[f.status] || f.status}</span>
-                {f.open_bugs ? <div className="badge bad" style={{ marginTop: 4 }}>{f.open_bugs} bug</div> : null}
-              </div>
-            </div>
-          ))}
-      </Panel>
-      <Panel title="System health" sub="Governance alive + fail-closed; the auditor runs at zero frontier cost.">
-        <div className="grid">
-          <Stat label="Sentinel" value={h.sentinel?.halted ? 'HALTED' : 'alive'} tone={h.sentinel?.halted ? 'var(--bad)' : 'var(--ok)'} />
-          <Stat label="Fail-closed" value={h.sentinel?.fail_closed ? 'yes' : 'no'} />
-          <Stat label="Alarms" value={h.sentinel?.alarms ?? 0} tone={(h.sentinel?.alarms ?? 0) ? 'var(--warn)' : undefined} />
-          <Stat label="Auditor" value={sa.model || 'deterministic'} />
-          <Stat label="Frontier $" value={sa.frontier_calls ?? 0} tone={(sa.frontier_calls ?? 0) ? 'var(--bad)' : 'var(--ok)'} />
-          <Stat label="Cost" value={`${cost.spent ?? 0}/${cost.cap ?? '∞'}`} />
-        </div>
-      </Panel>
-    </>
-  )
-}
-
-function Rooms({ data, open }) {
-  const rooms = data.rooms || []; const activity = data.activity || {}
-  return (
-    <>
-      <Panel title="Live rooms" sub="Sealed rooms the cooks are working in. Tap to inspect.">
-        {rooms.length === 0 ? <Empty ico="□">No active rooms.</Empty>
-          : rooms.map((r) => (
-            <div key={r.room_id} className="list-row click" onClick={() => open({ kind: 'room', id: r.room_id })}>
-              <b className="truncate" style={{ flex: 1 }} title={r.feature_id}>{r.feature_id}</b>
-              <span className="badge brand">{r.stage}</span>
-              <span className="muted mono truncate" style={{ maxWidth: 130 }} title={r.address || ''}>{r.address || r.status || ''}</span>
-            </div>
-          ))}
-      </Panel>
-      <Panel title="File activity" sub="Exactly which file each cook writes — and what the Leash allowed or DENIED.">
-        {Object.keys(activity).length === 0 ? <Empty ico="↳">No file actions yet.</Empty>
-          : Object.entries(activity).map(([rid, items]) => (
-            <div key={rid} style={{ marginBottom: 12 }}>
-              <div className="label truncate" title={rid} style={{ marginBottom: 4 }}>{rid}</div>
-              {items.map((a, i) => (
-                <div key={i} className="list-row" style={{ padding: '5px 0' }}>
-                  <span className="mono truncate" style={{ flex: 1 }} title={a.file || ''}>{a.file || a.tool}</span>
-                  <span className={`badge ${a.decision === 'allow' ? 'ok' : a.decision === 'deny' ? 'bad' : 'warn'}`}>{a.decision}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-      </Panel>
-    </>
-  )
-}
-
-function Decide({ cards, connected, act, open }) {
-  const list = (cards || []).filter((c) => (c.status || 'open') === 'open')
-  return (
-    <Panel title="Decide" sub="The line paused for your signature. Ed25519 — signed in your browser with your key.">
-      {list.length === 0 ? <Empty>Nothing waiting — the cooks are within scope.</Empty>
-        : list.map((c) => (
-          <div key={c.card_id} className="list-row">
-            <div style={{ minWidth: 0, flex: 1, cursor: 'pointer' }} onClick={() => open({ kind: 'card', id: c.card_id })}>
-              <b>{c.type || 'card'}</b> · <span className="dim truncate">{c.feature_id}</span>
-              <div className="muted mono" style={{ fontSize: 11 }}>{c.card_id}</div>
-            </div>
-            <button className="btn btn-ok btn-sm" disabled={!connected} onClick={() => act.sign(c.card_id)}>{connected ? 'Sign' : 'Off'}</button>
-            <button className="btn btn-bad btn-sm" disabled={!connected} onClick={() => act.reject(c.card_id)}>Reject</button>
+      <main className="main">
+        <div className={`health ${healthClass}`} onClick={() => setHealthOpen((v) => !v)}>
+          <div className="health-dot" />
+          <div className="health-mid truncate">
+            <strong>{halted ? 'HALTED — a governor failed.' : alarms ? `${alarms} alarm — review.` : 'All systems nominal.'}</strong>
+            <span className="muted"> THOR is governing · {live} live · {connected ? 'synced' : 'disconnected'}</span>
           </div>
-        ))}
-    </Panel>
-  )
-}
-
-function Audit({ data }) {
-  const lies = data.lies || {}; const recent = lies.recent || []; const bugs = data.bugs || []
-  const findings = data.findings || []; const audit = data.audit || []
-  return (
-    <>
-      <Panel title="Lies caught" right={lies.total ? <span className="badge warn">{lies.total}</span> : null} sub="Fabricated claims the verdict caught from reality.">
-        {recent.length === 0 ? <Empty>None — claims have matched reality.</Empty>
-          : recent.map((l, i) => <div key={i} className="list-row"><b className="warn" style={{ color: 'var(--warn)' }}>{l.feature_id || l.container}</b><span className="muted clamp-2" style={{ flex: 1 }}>{(l.signals || [])[0] || ''}</span></div>)}
-      </Panel>
-      <Panel title="New bugs" right={bugs.length ? <span className="badge bad">{bugs.length}</span> : null} sub="Every bug QA + the checker surfaced.">
-        {bugs.length === 0 ? <Empty>No bugs.</Empty>
-          : bugs.map((b) => (
-            <div key={b.bug_id} className="list-row">
-              <span className="dot" style={{ background: b.status === 'open' ? 'var(--bad)' : 'var(--ink-3)' }} />
-              <b className="truncate" style={{ flex: 'none', maxWidth: 90 }} title={b.feature_id}>{b.feature_id}</b>
-              <span className="badge">{b.source}</span>
-              <span className="muted clamp-2" style={{ flex: 1, minWidth: 0 }} title={b.description}>{b.description}</span>
-            </div>
-          ))}
-      </Panel>
-      <Panel title="Self-audit findings" sub="What the background inspector (Qwen) flagged.">
-        {findings.length === 0 ? <Empty>No open findings.</Empty>
-          : findings.map((f, i) => <div key={i} className="list-row break">{f.description || JSON.stringify(f)}</div>)}
-      </Panel>
-      <Panel title="Audit feed" sub="Every signed, hash-chained event from the ledger.">
-        <div style={{ maxHeight: 340, overflowY: 'auto' }}>
-          {audit.slice(-80).reverse().map((e, i) => (
-            <div key={i} className="list-row" style={{ padding: '5px 0' }}>
-              <span className="muted mono" style={{ minWidth: 34 }}>#{e.seq}</span>
-              <span className="badge brand truncate" style={{ maxWidth: 160 }}>{e.event_type}</span>
-              <span className="muted truncate" style={{ flex: 1 }}>{e.feature_id || e.room_id || ''}</span>
-            </div>
-          ))}
+          <div className="health-meta">{connected ? 'live' : 'stale'}</div>
         </div>
-      </Panel>
-    </>
-  )
-}
-
-function Direct({ data, act, open, flash }) {
-  const [title, setTitle] = useState('')
-  const turnOnPush = async () => { const r = await enablePush(); flash(r.ok ? 'Notifications on — THOR will buzz you when a card needs signing' : `Push: ${r.reason}`) }
-  return (
-    <>
-      <Panel title="Assign a feature" sub="Hand a feature to the governed worker.">
-        <div className="row wrap">
-          <input className="field" style={{ flex: '1 1 220px' }} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Feature title" onKeyDown={(e) => e.key === 'Enter' && title.trim() && (act.assign(title), setTitle(''))} />
-          <button className="btn btn-primary" disabled={!title.trim()} onClick={() => { act.assign(title); setTitle('') }}>Assign</button>
+        <div className={`health-drawer ${healthOpen ? 'open' : ''}`}>
+          <div className="health-grid">
+            <Meter name="Sentinel" pill={halted ? 'halted' : 'alive'} warn={halted} sub={`fail-closed: ${h.sentinel?.fail_closed ? 'yes' : 'no'}`} />
+            <Meter name="Alarms" pill={`${alarms}`} warn={!!alarms} sub="canary checks" />
+            <Meter name="Auditor" pill={(h.selfaudit?.model || 'deterministic').slice(0, 10)} sub={`frontier $: ${h.selfaudit?.frontier_calls ?? 0}`} />
+            <Meter name="Meta-trust" pill={h.meta_trust != null ? `${Math.round(h.meta_trust * 100)}%` : '—'} sub="self-audit" />
+            <Meter name="Your call" pill={`${d.cards.filter((c) => (c.status || 'open') === 'open').length}`} sub="cards waiting" />
+            <Meter name="Live rooms" pill={`${d.rooms.length}`} sub="sealed rooms" />
+          </div>
         </div>
-      </Panel>
-      <Panel title="Backlog" sub="Tap to open · edit priority · remove. Bounded by the phone command allowlist.">
-        {data.progress.length === 0 ? <Empty ico="◌">Nothing in the backlog.</Empty>
-          : data.progress.map((f) => (
-            <div key={f.feature_id} className="list-row click" onClick={() => open({ kind: 'feature', id: f.feature_id })}>
-              {prioBadge(f.priority)}<b className="truncate" style={{ flex: 1 }} title={f.title}>{f.title}</b>
-              <span className="badge">{STAGE_LABEL[f.status] || f.status}</span>
-            </div>
+
+        <div className="board-head">
+          <div className="board-title">Task Board <span className="muted">· {d.features.length} tasks · {shipped} shipped</span></div>
+          <div className="board-actions">
+            {!connected && <span className="dpill" style={{ color: 'var(--alert)' }}>signing disabled</span>}
+            <button className="btn btn-primary" onClick={act.newTask}>+ New task</button>
+          </div>
+        </div>
+
+        <div className="filter-bar">
+          {PRIOS.map(([lbl, p]) => (
+            <button key={p} className={`filter-pill ${prio.has(p) ? 'active' : ''}`} onClick={() => setPrio((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n })}>{lbl}</button>
           ))}
-      </Panel>
-      <Panel title="Notifications" sub="A THOR notification on this phone when a card needs signing — even with the app closed.">
-        <button className="btn btn-ok" disabled={!pushSupported()} onClick={turnOnPush}>{pushSupported() ? '🔔 Enable notifications' : 'Push not supported here'}</button>
-      </Panel>
-    </>
-  )
-}
+          <div className="filter-search">
+            <input placeholder="Search tasks…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+        </div>
 
-/* ---------- right-side drawer ---------- */
-function Drawer({ sel, data, connected, act, close }) {
-  const f = sel?.kind === 'feature' ? data.progress.find((x) => x.feature_id === sel.id) : null
-  const room = sel?.kind === 'room' ? data.rooms.find((x) => x.room_id === sel.id) : null
-  const card = sel?.kind === 'card' ? data.cards.find((x) => x.card_id === sel.id) : null
-  const fid = f?.feature_id || room?.feature_id || card?.feature_id
-  const bugs = (data.bugs || []).filter((b) => b.feature_id === fid)
-  const roomsFor = (data.rooms || []).filter((r) => r.feature_id === fid)
-  const files = roomsFor.flatMap((r) => (data.activity?.[r.room_id] || []))
-  const title = f?.title || room?.room_id || card?.type || sel?.id || ''
-
-  return (
-    <>
-      <div className={`scrim ${sel ? 'open' : ''}`} onClick={close} />
-      <aside className={`drawer ${sel ? 'open' : ''}`} role="dialog" aria-hidden={!sel}>
-        {sel && (
-          <>
-            <div className="drawer-h">
-              <div style={{ minWidth: 0 }}>
-                <div className="label">{sel.kind}</div>
-                <div className="h1 break">{title}</div>
-                {fid && <div className="row" style={{ gap: 8, marginTop: 6 }}>{f && prioBadge(f.priority)}<span className="badge">{STAGE_LABEL[f?.status] || f?.status || room?.stage || card?.status}</span></div>}
+        <div className="board">
+          {COLUMNS.map((col) => {
+            const items = visible.filter((f) => col.has(f.status))
+            const liveN = items.filter((f) => isLive(f.status)).length
+            return (
+              <div key={col.key} className="column">
+                <div className="column-head">
+                  <div className="column-title"><span className="column-dot" style={{ background: col.dot }} />{col.label}</div>
+                  <span className={`column-count ${liveN ? 'live' : ''}`}>{liveN ? `${liveN} live` : items.length}</span>
+                </div>
+                <div className="column-body">
+                  {items.length === 0
+                    ? <div className="column-empty">{search || prio.size ? 'No match' : col.key === 'backlog' ? 'Assign a task' : 'Empty'}</div>
+                    : items.map((f) => <Card key={f.feature_id} f={f} files={filesFor(f.feature_id)} connected={connected} act={act} open={(id) => { setSel(id); setTab('overview') }} />)}
+                </div>
               </div>
-              <button className="btn btn-ghost btn-icon" onClick={close} aria-label="Close">✕</button>
+            )
+          })}
+        </div>
+      </main>
+
+      <Drawer fid={sel} d={d} tab={tab} setTab={setTab} connected={connected} act={act}
+        roomFor={roomFor} filesFor={filesFor} cardFor={cardFor} close={() => setSel(null)} />
+
+      <div className="toast-wrap">{toasts.map((t) => <div key={t.id} className="toast">{t.msg}</div>)}</div>
+    </div>
+  )
+}
+
+const Meter = ({ name, pill, sub, warn }) => (
+  <div className="meter"><div className="meter-head"><span>{name}</span><span className={`meter-pill ${warn ? 'warn' : ''}`}>{pill}</span></div><div className="meter-sub truncate">{sub}</div></div>
+)
+const prioClass = (p) => `prio p${p ?? 3}`
+const ownerOf = (f) => (isLive(f.status) ? 'claude' : 'human')
+const avChar = (o) => (o === 'claude' ? 'C' : o === 'cto' ? '◆' : 'S')
+
+function Card({ f, files, connected, act, open }) {
+  const live = isLive(f.status)
+  const curFile = live ? (files.find((a) => a.decision === 'allow') || files[0])?.file : null
+  const alarm = f.open_bugs > 0 && live
+  return (
+    <div className={`card ${live ? 'live' : ''} ${f.status === 'done' ? 'done' : ''} ${alarm ? 'alarm' : ''}`} onClick={() => open(f.feature_id)}>
+      <div className="card-top">
+        <span className="tag feature">feature</span>
+        <span className={prioClass(f.priority)}>P{f.priority ?? 3}</span>
+      </div>
+      <div className="card-title clamp-2">{f.title}</div>
+      {live && (
+        <>
+          <div className="progress"><div className="progress-fill" style={{ width: `${f.progress}%` }} /></div>
+          <div className="live-bar"><span className="live-bar-dot" /><span className="live-bar-file" title={curFile || ''}>{curFile || STATUS_LABEL[f.status]}</span></div>
+        </>
+      )}
+      {alarm && <div className="card-alert"><span className="card-alert-ico">!</span><span>{f.open_bugs} open bug — review</span></div>}
+      {f.status !== 'done' && (
+        <div className="card-foot">
+          <div className={`avatar ${ownerOf(f)}`}>{avChar(ownerOf(f))}</div>
+          <span className="truncate">{f.feature_id}</span>
+          <span className="card-est">{STATUS_LABEL[f.status]}</span>
+        </div>
+      )}
+      {f.status === 'done' && <div className="card-done-foot">✓ shipped</div>}
+      {live && (
+        <div className="live-actions">
+          <button className="live-btn stop" onClick={(e) => { e.stopPropagation(); act.stop(f.feature_id) }}>Stop</button>
+          <button className="live-btn" onClick={(e) => { e.stopPropagation(); open(f.feature_id) }}>Open</button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Drawer({ fid, d, tab, setTab, connected, act, roomFor, filesFor, cardFor, close }) {
+  const f = d.features.find((x) => x.feature_id === fid)
+  const bugs = (d.bugs || []).filter((b) => b.feature_id === fid)
+  const files = fid ? filesFor(fid) : []
+  const room = fid ? roomFor(fid) : null
+  const card = fid ? cardFor(fid) : null
+  const activity = (d.audit || []).filter((e) => e.feature_id === fid)
+  const gov = files.filter((a) => a.decision)
+  const allows = gov.filter((a) => a.decision === 'allow').length
+  const denies = gov.filter((a) => a.decision === 'deny').length
+
+  const Tab = ({ id, label, n }) => (
+    <div className={`dtab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>{label}{n != null && <span className="tc">{n}</span>}</div>
+  )
+
+  return (
+    <>
+      <div className={`scrim ${f ? 'open' : ''}`} onClick={close} />
+      <aside className={`drawer ${f ? 'open' : ''}`} role="dialog" aria-hidden={!f}>
+        {f && (
+          <>
+            <div className="drawer-head">
+              <div className="drawer-crumb"><span>Task Board</span><span>/</span><span>{STATUS_LABEL[f.status]}</span><span>{f.feature_id}</span>
+                <button className="drawer-close" onClick={close}>✕</button>
+              </div>
+              <div className="drawer-title break">{f.title}</div>
+              <div className="drawer-meta">
+                <span className="dpill"><span className="tag feature" style={{ padding: '1px 5px', fontSize: 9.5 }}>feature</span></span>
+                <span className="dpill"><span className={prioClass(f.priority)} style={{ margin: 0 }}>P{f.priority ?? 3}</span></span>
+                <span className="dpill"><span className="label">status</span>{STATUS_LABEL[f.status]}</span>
+                {f.open_bugs ? <span className="dpill" style={{ background: 'var(--alert-tint)', color: 'var(--alert)' }}>{f.open_bugs} bug</span> : null}
+              </div>
             </div>
+
+            <div className="drawer-tabs">
+              <Tab id="overview" label="Overview" />
+              <Tab id="activity" label="Activity" n={activity.length} />
+              <Tab id="governance" label="Governance" n={gov.length} />
+              <Tab id="files" label="Files" n={files.length} />
+            </div>
+
             <div className="drawer-body">
-              {f && <section><div className="label" style={{ marginBottom: 8 }}>SDLC progress</div><Timeline status={f.status} /></section>}
-
-              {f && (
-                <section>
-                  <div className="label" style={{ marginBottom: 8 }}>Actions</div>
-                  <div className="row wrap">
-                    {PRIOS.map(([lbl, p]) => <button key={p} className="btn btn-sm" onClick={() => act.prioritize(f.feature_id, p)}>{lbl}</button>)}
-                    <button className="btn btn-sm" onClick={() => act.markReady(f.feature_id)}>Mark ready</button>
-                    <button className="btn btn-sm btn-bad" onClick={() => act.remove(f.feature_id)}>Remove</button>
+              {tab === 'overview' && (
+                <>
+                  <div className="psec">
+                    <div className="plabel">SDLC progress</div>
+                    <div className="progress" style={{ height: 6 }}><div className={`progress-fill ${f.status === 'done' ? 'done' : ''}`} style={{ width: `${f.progress}%` }} /></div>
+                    <div className="meter-sub" style={{ marginTop: 6 }}>{f.progress}% · {STATUS_LABEL[f.status]}</div>
                   </div>
-                </section>
-              )}
-
-              {card && (
-                <section>
-                  <div className="label" style={{ marginBottom: 8 }}>Decision</div>
-                  <div className="row">
-                    <button className="btn btn-ok" disabled={!connected} onClick={() => { act.sign(card.card_id); close() }}>Sign</button>
-                    <button className="btn btn-bad" disabled={!connected} onClick={() => { act.reject(card.card_id); close() }}>Reject</button>
+                  <div className="psec">
+                    <div className="plabel">Properties</div>
+                    <dl className="pprops">
+                      <dt>Task ID</dt><dd className="mono">{f.feature_id}</dd>
+                      <dt>Status</dt><dd>{STATUS_LABEL[f.status]}</dd>
+                      <dt>Priority</dt><dd>P{f.priority ?? 3}</dd>
+                      {room && <><dt>Room</dt><dd className="mono break">{room.room_id}{room.address ? ` · ${room.address}` : ''}</dd></>}
+                      <dt>Open bugs</dt><dd>{f.open_bugs || 0}</dd>
+                    </dl>
                   </div>
-                  <pre className="mono break" style={{ marginTop: 10, color: 'var(--ink-3)', whiteSpace: 'pre-wrap' }}>{JSON.stringify(card.payload || {}, null, 1).slice(0, 600)}</pre>
-                </section>
-              )}
-
-              <section>
-                <div className="label" style={{ marginBottom: 8 }}>Bugs ({bugs.length})</div>
-                {bugs.length === 0 ? <div className="muted">None.</div>
-                  : bugs.map((b) => <div key={b.bug_id} className="list-row break"><span className="dot" style={{ background: b.status === 'open' ? 'var(--bad)' : 'var(--ink-3)' }} /><span style={{ flex: 1 }}>{b.description}</span></div>)}
-              </section>
-
-              <section>
-                <div className="label" style={{ marginBottom: 8 }}>File activity ({files.length})</div>
-                {files.length === 0 ? <div className="muted">No file actions recorded.</div>
-                  : files.slice(0, 30).map((a, i) => (
-                    <div key={i} className="list-row" style={{ padding: '5px 0' }}>
-                      <span className="mono truncate" style={{ flex: 1 }} title={a.file || ''}>{a.file || a.tool}</span>
-                      <span className={`badge ${a.decision === 'allow' ? 'ok' : a.decision === 'deny' ? 'bad' : 'warn'}`}>{a.decision}</span>
+                  <div className="psec">
+                    <div className="plabel">Actions</div>
+                    <div className="actions-row">
+                      {card && <button className="btn btn-ok" disabled={!connected} onClick={() => { act.sign(fid); close() }}>Sign</button>}
+                      {card && <button className="btn btn-bad" disabled={!connected} onClick={() => { act.reject(fid); close() }}>Reject</button>}
+                      {PRIOS.map(([lbl, p]) => <button key={p} className="btn" onClick={() => act.prioritize(fid, p)}>{lbl}</button>)}
+                      <button className="btn" onClick={() => act.markReady(fid)}>Mark ready</button>
+                      {isLive(f.status) && <button className="btn btn-bad" onClick={() => act.stop(fid)}>Stop work</button>}
+                      <button className="btn btn-bad" onClick={() => act.remove(fid)}>Remove</button>
                     </div>
+                  </div>
+                  <div className="psec">
+                    <div className="plabel">Bugs ({bugs.length})</div>
+                    {bugs.length === 0 ? <div className="muted">None.</div> : bugs.map((b) => <div key={b.bug_id} className="file-row break"><span style={{ flex: 1 }}>{b.description}</span><span className={`file-act ${b.status === 'open' ? 'block' : 'read'}`}>{b.status}</span></div>)}
+                  </div>
+                </>
+              )}
+
+              {tab === 'activity' && (activity.length === 0
+                ? <div className="empty">No activity yet.</div>
+                : activity.slice(-60).reverse().map((e, i) => (
+                  <div key={i} className="gov-row"><span className="mono" style={{ color: 'var(--ink-4)', fontSize: 11 }}>#{e.seq}</span><span><b>{e.event_type}</b> <span className="muted">{e.room_id || ''}</span></span></div>
+                )))}
+
+              {tab === 'governance' && (gov.length === 0
+                ? <div className="empty">No governance events yet.</div>
+                : <>
+                  <div className="gov-stats">
+                    <div className="gstat"><div className="gstat-v ok">{allows}</div><div className="gstat-l">Allowed</div></div>
+                    <div className="gstat"><div className="gstat-v block">{denies}</div><div className="gstat-l">Denied</div></div>
+                    <div className="gstat"><div className="gstat-v">{gov.length}</div><div className="gstat-l">Total</div></div>
+                  </div>
+                  {gov.map((a, i) => (
+                    <div key={i} className="gov-row"><span className={`gverb ${a.decision}`}>{a.decision}</span><span className="break"><b className="mono">{a.file || a.tool}</b> {a.reason ? <span className="muted">· {a.reason}</span> : ''}</span></div>
                   ))}
-              </section>
+                </>)}
+
+              {tab === 'files' && (files.length === 0
+                ? <div className="empty">No files touched yet.</div>
+                : files.map((a, i) => (
+                  <div key={i} className="file-row"><span className="file-path" title={a.file || ''}>{a.file || a.tool}</span><span className={`file-act ${a.decision || 'read'}`}>{a.decision || 'read'}</span></div>
+                )))}
             </div>
           </>
         )}
