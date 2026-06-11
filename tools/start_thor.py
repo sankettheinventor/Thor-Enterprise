@@ -186,6 +186,10 @@ def boot() -> list[tuple[object, int]]:
     dashboard_api.bind(dashboard)
     sentinel_api.bind(sentinel)
     selfaudit_api.bind(selfaudit)
+    # native push: a card that needs a human → a THOR notification on every subscribed phone (best-effort)
+    from dashboard import push as _push
+    manager.on_card_raised = lambda cid, t, fid, st: _push.send(
+        "THOR — signature needed", f"{t} · {fid} is awaiting your signature", "/app/")
     dashboard_api.app.add_api_route(       # serve the static cockpit + shared theme at :7080/
         "/", lambda: FileResponse(str(COCKPIT)), include_in_schema=False)
     dashboard_api.app.add_api_route(

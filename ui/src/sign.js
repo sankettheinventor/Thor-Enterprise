@@ -27,11 +27,20 @@ async function registered() {
   return { priv, pub }
 }
 
-// Sign a card. Returns the Manager's verdict ({verified} or {verified:false, reason}).
-export async function signCard(cardId) {
+async function signedDecision(cardId, path, extra) {
   const { priv, pub } = await registered()
   const ch = await get('/cards/' + cardId + '/challenge')
   if (ch.error) return { verified: false, reason: ch.error }
   const sig = b64url(ed.sign(new TextEncoder().encode(ch.material), priv)) // signed locally with YOUR key
-  return post('/approve', { card_id: cardId, signature: sig, signer_pub: pub, nonce: ch.nonce })
+  return post(path, { card_id: cardId, signature: sig, signer_pub: pub, nonce: ch.nonce, ...(extra || {}) })
+}
+
+// Approve (sign) a card — drives the real merge on a verified Signature 3.
+export function signCard(cardId) {
+  return signedDecision(cardId, '/approve')
+}
+
+// Decline a card — same signed authority + one-time nonce (a captured reject can't be replayed).
+export function rejectCard(cardId, reason = '') {
+  return signedDecision(cardId, '/reject', { reason })
 }

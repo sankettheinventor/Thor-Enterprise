@@ -32,3 +32,30 @@ self.addEventListener('fetch', (e) => {
     )
   )
 })
+
+// Native push — a THOR-styled OS notification arrives even with the app closed. The payload is the
+// server's encrypted alert (title/body/url); the push service only relayed ciphertext.
+self.addEventListener('push', (e) => {
+  let d = {}
+  try { d = e.data ? e.data.json() : {} } catch (_) { d = { body: e.data && e.data.text() } }
+  e.waitUntil(self.registration.showNotification(d.title || 'THOR', {
+    body: d.body || 'A card needs your attention.',
+    icon: d.icon || '/app/icon.svg',
+    badge: '/app/icon.svg',
+    tag: d.tag || 'thor',
+    data: { url: d.url || '/app/' },
+    requireInteraction: true,            // a signature decision shouldn't vanish on its own
+    vibrate: [80, 40, 80],
+  }))
+})
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  const url = (e.notification.data && e.notification.data.url) || '/app/'
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+      for (const c of cs) { if (c.url.includes('/app') && 'focus' in c) return c.focus() }
+      return self.clients.openWindow(url)
+    })
+  )
+})

@@ -92,6 +92,30 @@ def health_system():
     return _service.health_system()
 
 
+@app.get("/rooms/activity")
+def rooms_activity():
+    """Per-room LIVE file activity — which file each room's cook is writing/was denied (from the Leash)."""
+    return _service.room_activity()
+
+
+@app.get("/progress")
+def progress():
+    """Task / SDLC / feature progress — where every feature sits on the line, event-sourced."""
+    return {"features": _service.feature_progress()}
+
+
+@app.get("/bugs")
+def bugs():
+    """Every bug found across the line (QA + checker) — the 'new bugs found' feed."""
+    return {"bugs": _service.bugs()}
+
+
+@app.get("/commands")
+def commands():
+    """What the phone is ALLOWED to do — the bounded command allowlist (Module 9.5)."""
+    return _service.commands()
+
+
 @app.get("/stream")
 async def stream():
     """Real-time sync (Module 9: every head is a REMOTE HEAD on the same Manager truth). Server-Sent
@@ -148,4 +172,53 @@ def approve(s: Sig, _: None = Depends(require_token)):
 
 @app.post("/reject")
 def reject(s: Sig, _: None = Depends(require_token)):
-    return _service.reject(s.card_id, s.signature, s.signer_pub, s.reason)
+    return _service.reject(s.card_id, s.signature, s.signer_pub, s.nonce, s.reason)
+
+
+class CmdIn(BaseModel):
+    feature_id: str
+    priority: int | None = None
+
+
+@app.post("/commands/{command}")
+def run_command(command: str, c: CmdIn, _: None = Depends(require_token)):
+    """Phone command parity — but ONLY the bounded allowlist (Module 9.5: the most-exposed device gets
+    the least catastrophic power). Anything outside the allowlist is refused; reaching into a room or
+    bypassing governance is impossible from here by design."""
+    from mobile.allowlist import allowed
+    if not allowed(command):
+        return {"ok": False, "reason": f"'{command}' is not in the phone allowlist"}
+    if command == "mark_ready":
+        _service.mark_ready(c.feature_id)
+        return {"ok": True, "command": command, "feature_id": c.feature_id}
+    if command == "prioritize":
+        _service.manager.set_feature_priority(c.feature_id, c.priority if c.priority is not None else 1)
+        return {"ok": True, "command": command, "feature_id": c.feature_id, "priority": c.priority}
+    # add_feature/approve/reject have dedicated, signature-gated endpoints
+    return {"ok": False, "reason": f"use the dedicated endpoint for '{command}'"}
+
+
+class PushSub(BaseModel):
+    endpoint: str
+    keys: dict
+
+
+@app.get("/push/vapid")
+def push_vapid():
+    """The application server key the phone uses to subscribe to native push (Web Push / VAPID)."""
+    from dashboard import push
+    return {"key": push.public_key()}
+
+
+@app.post("/push/subscribe")
+def push_subscribe(sub: PushSub):
+    """Store a device's push subscription so THOR can alert it when a card needs a signature."""
+    from dashboard import push
+    return {"ok": True, "subscribers": push.subscribe(sub.model_dump())}
+
+
+@app.post("/push/test")
+def push_test(_: None = Depends(require_token)):
+    """Send a THOR-styled test notification to all subscribed devices."""
+    from dashboard import push
+    return push.send("THOR", "Your cockpit is connected — notifications are on.", "/app/")

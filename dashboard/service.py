@@ -84,6 +84,47 @@ class DashboardService:
     def findings(self) -> list[dict]:
         return self.manager.list_checker_findings()
 
+    def room_activity(self) -> dict:
+        """Per-room LIVE file activity — which file each room's cook is writing (allow) or was denied,
+        from the Leash's `action.decided` records. READ-ONLY; the cockpit can watch, never reach in."""
+        import json
+        by_room: dict[str, list] = {}
+        for e in self.manager.eventlog.all_events():
+            if e["event_type"] != "action.decided":
+                continue
+            p = json.loads(e["payload"])
+            act = p.get("action") or {}
+            by_room.setdefault(p.get("room_id") or "unknown", []).append(
+                {"seq": e["seq"], "file": act.get("target"), "tool": act.get("name") or act.get("type"),
+                 "decision": p.get("decision"), "reason": p.get("reason")})
+        return {rid: items[-12:][::-1] for rid, items in by_room.items()}   # most-recent 12 per room
+
+    # progress ladder (event-sourced status): where each feature sits in the SDLC
+    _LADDER = ("backlog", "ready", "building", "in_qa", "awaiting_signature", "done")
+
+    def feature_progress(self) -> list[dict]:
+        """Task / SDLC / feature progress — where each feature sits on the line, from the projected
+        status (not a cook's claim), with its open-bug count."""
+        out = []
+        for f in self.manager.list_features():
+            status = f.get("status") or "backlog"
+            idx = self._LADDER.index(status) if status in self._LADDER else 0
+            open_bugs = sum(1 for b in self.manager.list_bugs(f["feature_id"]) if b.get("status") == "open")
+            out.append({"feature_id": f["feature_id"], "title": f.get("title") or f["feature_id"],
+                        "status": status, "stage": idx, "stages": list(self._LADDER),
+                        "progress": round(100 * idx / (len(self._LADDER) - 1)), "open_bugs": open_bugs})
+        return sorted(out, key=lambda x: (-x["progress"], x["feature_id"]))
+
+    def bugs(self) -> list[dict]:
+        """Every bug found across the line — the 'new bugs found' feed (QA + checker)."""
+        return self.manager.all_bugs()
+
+    def commands(self) -> dict:
+        """What the PHONE is allowed to do — the bounded command allowlist (Module 9.5). Anything else
+        (reach into a room, change rules, bypass governance) is rejected by design."""
+        from mobile.allowlist import ALLOWED
+        return {"allowed": sorted(ALLOWED)}
+
     def lies_caught(self) -> dict:
         """The cockpit's honesty meter: every caught lie (dishonesty.caught), grouped by container."""
         import json
@@ -161,13 +202,13 @@ class DashboardService:
             return {"merged": False, "reason": "verdict stale (branch moved) — re-run before merge (R9)"}
         return self.manager.direct_merge(repo, branch, card["feature_id"], signature_ref=card["card_id"])
 
-    def reject(self, card_id: str, signature_b64: str, signer_pub_b64: str, reason: str = "") -> dict:
+    def reject(self, card_id: str, signature_b64: str, signer_pub_b64: str,
+               nonce: str | None = None, reason: str = "") -> dict:
         if not self.connected():
             return {"verified": False, "reason": "disconnected — cannot sign against a stale picture"}
-        card = self.manager._get_card(card_id)
-        verified = bool(card) and _verify(self.manager, card_id, card, signer_pub_b64, signature_b64)
-        self._action("reject", {"card_id": card_id, "reason": reason})
-        return {"verified": verified}
+        result = self.manager.reject_card(card_id, signature_b64, signer_pub_b64, nonce=nonce, reason=reason)
+        self._action("reject", {"card_id": card_id, "verified": result["verified"]})
+        return result
 
     def dry_run(self) -> dict:
         if self.scheduler_factory is None:

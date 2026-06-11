@@ -142,6 +142,12 @@ class ThorManager:
         status = "held" if held else "open"
         self._record("card.raised", {"card_id": card_id, "type": type_, "feature_id": feature_id,
                                      "payload": payload, "status": status}, feature_id=feature_id)
+        hook = getattr(self, "on_card_raised", None)   # optional push-notify hook (the plane sets it)
+        if hook:
+            try:
+                hook(card_id, type_, feature_id, status)
+            except Exception:  # noqa: BLE001 — a notification must NEVER break governance
+                pass
         return card_id
 
     def _get_card(self, card_id: str) -> dict | None:
@@ -179,6 +185,25 @@ class ThorManager:
                                       "signature": signature_b64}, feature_id=card["feature_id"])
         return {"verified": True, "action_taken": "approved"}
 
+    def reject_card(self, card_id: str, signature_b64: str, signer_pub_b64: str,
+                    nonce: str | None = None, reason: str = "") -> dict:
+        """Decline a card with the SAME signed-authority guarantees as approve (registered signer +
+        mandatory one-time nonce — a captured reject can't be replayed). Records card.rejected."""
+        card = self._get_card(card_id)
+        if not card or card["status"] in ("approved", "rejected"):
+            return {"verified": False, "reason": "card not open"}
+        if not self.is_authorized_signer(signer_pub_b64):
+            return {"verified": False, "reason": "unauthorized signer — not a registered operator key"}
+        if nonce is None or self._challenges.get(card_id) != nonce:
+            return {"verified": False, "reason": "missing or replayed challenge — card stays open"}
+        material = self.card_material(card_id, card["payload"], nonce)
+        if not self.identity.verify_signature(signer_pub_b64, material, signature_b64)["valid"]:
+            return {"verified": False, "reason": "signature invalid — card stays open"}
+        self._challenges.pop(card_id, None)
+        self._record("card.rejected", {"card_id": card_id, "decided_by": signer_pub_b64[:12],
+                                      "reason": reason}, feature_id=card["feature_id"])
+        return {"verified": True, "action_taken": "rejected"}
+
     def is_card_approved(self, card_id: str) -> bool:
         c = self._get_card(card_id)
         return bool(c and c["status"] == "approved")
@@ -201,6 +226,14 @@ class ThorManager:
             return [{"bug_id": r[0], "severity": r[1], "description": r[2], "source": r[3], "status": r[4]}
                     for r in cur.fetchall()]
 
+    def all_bugs(self) -> list[dict]:
+        """Every bug found across the line (QA + checker), newest first — the cockpit 'new bugs' feed."""
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT bug_id,feature_id,severity,description,source,status,found_at FROM bugs "
+                        "ORDER BY found_at DESC")
+            return [{"bug_id": r[0], "feature_id": r[1], "severity": r[2], "description": r[3],
+                     "source": r[4], "status": r[5]} for r in cur.fetchall()]
+
     # ---- feature catalog (Kind C) — directed by the PM Surface (Module 8), event-sourced ----
     def add_feature(self, feature_id: str, title: str, context: str = "", priority: int = 3,
                     est_tokens: int = 1000) -> str:
@@ -211,6 +244,10 @@ class ThorManager:
 
     def set_feature_status(self, feature_id: str, status: str) -> None:
         self._record("feature.status", {"feature_id": feature_id, "status": status}, feature_id=feature_id)
+
+    def set_feature_priority(self, feature_id: str, priority: int) -> None:
+        self._record("feature.priority", {"feature_id": feature_id, "priority": int(priority)},
+                     feature_id=feature_id)
 
     def list_features(self) -> list[dict]:
         with self.conn.cursor() as cur:
@@ -248,6 +285,9 @@ class ThorManager:
                 cur.execute("UPDATE cards SET status='approved', decided_by=%s, signature=%s, "
                             "decided_at=%s WHERE card_id=%s",
                             (p["decided_by"], p["signature"], time.time(), p["card_id"]))
+            elif event_type == "card.rejected":
+                cur.execute("UPDATE cards SET status='rejected', decided_by=%s, decided_at=%s "
+                            "WHERE card_id=%s", (p["decided_by"], time.time(), p["card_id"]))
             elif event_type == "feature.added":
                 cur.execute("INSERT INTO features (feature_id,title,context,priority,status,est_tokens)"
                             " VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (feature_id) DO UPDATE SET "
@@ -257,6 +297,9 @@ class ThorManager:
             elif event_type == "feature.status":
                 cur.execute("UPDATE features SET status=%s WHERE feature_id=%s",
                             (p["status"], p["feature_id"]))
+            elif event_type == "feature.priority":
+                cur.execute("UPDATE features SET priority=%s WHERE feature_id=%s",
+                            (p["priority"], p["feature_id"]))
         self.conn.commit()
 
     def rebuild_from_log(self) -> None:

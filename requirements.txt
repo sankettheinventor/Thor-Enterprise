@@ -16,3 +16,4 @@ httpx>=0.27            # fastapi.testclient (HTTP-surface auth tests)
 
 # The production cook is Claude Code IN the room (wall/image/Dockerfile.claude) — no Python LLM SDK
 # here; it authenticates with CLAUDE_CODE_OAUTH_TOKEN and is governed by leash.claude_code_hook.
+pywebpush==2.0.3
