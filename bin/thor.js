@@ -21,6 +21,7 @@ function docker(args) {
 
 switch (cmd) {
   case 'up':
+  case 'start':
     if (!process.env.THOR_API_TOKEN) {
       console.error('Set THOR_API_TOKEN first, e.g.:\n  export THOR_API_TOKEN=$(openssl rand -hex 32)')
       process.exit(1)

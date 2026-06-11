@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>THOR Enterprise — Governed development, in your pocket</title>
+<meta name="description" content="AI agents build your software in sealed rooms. Every action is judged before it executes. Done is proven against reality. The final signature is always yours.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+:root{
+  --ink:#0B0A08;--ink2:#14120D;--ink3:#1C1913;
+  --paper:#F4EFE4;--paper2:#ECE5D4;--paper3:#E2D9C4;
+  --bone:#EDE6D4;--bone-mu:rgba(237,230,212,.55);--bone-mu2:rgba(237,230,212,.28);--bone-line:rgba(237,230,212,.12);
+  --inkt:#1D1A13;--inkt-mu:rgba(29,26,19,.62);--inkt-mu2:rgba(29,26,19,.38);--ink-line:rgba(29,26,19,.16);
+  --bolt:#E8B23A;--bolt-dim:rgba(232,178,58,.14);--bolt-line:rgba(232,178,58,.28);
+  --seal:#B33A2B;--seal-dim:rgba(179,58,43,.12);
+  --verd:#3FA877;--verd-dim:rgba(63,168,119,.12);
+  --deny:#D8472B;
+  --fr:'Fraunces',serif;--nr:'Newsreader',serif;--mn:'Spline Sans Mono',monospace;
+  --r:4px;--rl:10px;
+}
+body{font-family:var(--nr);background:var(--ink);color:var(--bone);font-size:17px;line-height:1.75}
+::selection{background:var(--bolt);color:var(--ink)}
+img{max-width:100%;display:block}
+a{color:inherit}
+
+/* ---------- nav ---------- */
+#nav{position:fixed;top:0;left:0;right:0;z-index:600;display:flex;align-items:center;justify-content:space-between;
+  padding:.95rem 2.4rem;transition:background .35s,border-color .35s;border-bottom:1px solid transparent}
+#nav.sc{background:rgba(11,10,8,.92);backdrop-filter:blur(18px);border-bottom-color:var(--bone-line)}
+.logo{font-family:var(--fr);font-weight:600;font-size:1.12rem;letter-spacing:.02em;text-decoration:none;display:flex;align-items:baseline;gap:.55rem}
+.logo .bolt{color:var(--bolt)}
+.logo small{font-family:var(--mn);font-size:9px;letter-spacing:.26em;color:var(--bone-mu2);text-transform:uppercase}
+.nl{display:flex;gap:2.1rem;list-style:none;align-items:center}
+.nl a{font-family:var(--mn);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--bone-mu);text-decoration:none;transition:color .2s}
+.nl a:hover{color:var(--bolt)}
+.nb{font-family:var(--mn);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink);
+  background:var(--bolt);border:1px solid var(--bolt);padding:8px 18px;border-radius:var(--r);text-decoration:none;transition:all .22s}
+.nb:hover{background:transparent;color:var(--bolt)}
+@media(max-width:880px){.nl li:not(:last-child){display:none}}
+
+/* ---------- shared section furniture ---------- */
+.wrap{max-width:1180px;margin:0 auto;padding:7.5rem 2.4rem}
+.eyebrow{font-family:var(--mn);font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:var(--bolt);
+  display:flex;align-items:center;gap:12px;margin-bottom:1.4rem}
+.eyebrow::before{content:'';width:26px;height:1px;background:var(--bolt)}
+.paper .eyebrow{color:var(--seal)}
+.paper .eyebrow::before{background:var(--seal)}
+.h-display{font-family:var(--fr);font-weight:500;line-height:1.04;letter-spacing:-.015em}
+.kicker{font-family:var(--mn);font-size:11px;letter-spacing:.08em;color:var(--bone-mu2)}
+
+/* material: the study (paper) */
+.paper{background:var(--paper);color:var(--inkt)}
+.paper .kicker{color:var(--inkt-mu2)}
+
+/* reveal */
+.rv{opacity:0;transform:translateY(26px);transition:opacity .8s cubic-bezier(.22,1,.36,1),transform .8s cubic-bezier(.22,1,.36,1)}
+.rv.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){
+  .rv{opacity:1;transform:none;transition:none}
+  .mar-track{animation:none!important}
+  html{scroll-behavior:auto}
+}
+
+/* ---------- hero ---------- */
+.hero{min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden;
+  background:
+    radial-gradient(1100px 500px at 78% 12%,rgba(232,178,58,.07),transparent 62%),
+    radial-gradient(800px 600px at 8% 92%,rgba(232,178,58,.04),transparent 60%),
+    var(--ink)}
+.hero::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:.45;mix-blend-mode:overlay;
+  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.05'/%3E%3C/svg%3E")}
+.hg{position:relative;z-index:5;max-width:1180px;margin:0 auto;padding:8.5rem 2.4rem 6rem;
+  display:grid;grid-template-columns:1.05fr .95fr;gap:4.5rem;align-items:center;width:100%}
+.h1{font-family:var(--fr);font-weight:500;font-size:clamp(2.9rem,5.4vw,4.7rem);line-height:1.02;letter-spacing:-.02em;margin-bottom:1.3rem}
+.h1 em{font-style:italic;font-weight:400;color:var(--bolt)}
+.htag{font-family:var(--mn);font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--bolt);margin-bottom:1.5rem}
+.hsub{font-size:17.5px;color:var(--bone-mu);max-width:46ch;line-height:1.8}
+.hsub b{color:var(--bone);font-weight:500}
+.hctas{display:flex;gap:14px;margin-top:2.2rem;flex-wrap:wrap}
+.bp{font-family:var(--mn);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink);
+  background:var(--bolt);border:1px solid var(--bolt);padding:14px 30px;border-radius:var(--r);text-decoration:none;transition:all .22s;font-weight:500}
+.bp:hover{transform:translateY(-2px);box-shadow:0 16px 42px rgba(232,178,58,.22)}
+.bg2{font-family:var(--mn);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--bone);
+  background:transparent;border:1px solid var(--bone-line);padding:14px 30px;border-radius:var(--r);text-decoration:none;transition:all .22s}
+.bg2:hover{border-color:var(--bolt);color:var(--bolt)}
+.hstats{display:flex;gap:2.6rem;margin-top:3rem;padding-top:2rem;border-top:1px solid var(--bone-line);flex-wrap:wrap}
+.hv{font-family:var(--fr);font-weight:500;font-size:1.85rem;line-height:1}
+.hv span{color:var(--bolt)}
+.hl{font-family:var(--mn);font-size:9px;letter-spacing:.18em;text-transform:uppercase;color:var(--bone-mu2);margin-top:6px}
+
+/* terminal chrome (shared) */
+.term{background:#0E0C09;border:1px solid var(--bone-line);border-radius:var(--rl);overflow:hidden;
+  box-shadow:0 30px 80px rgba(0,0,0,.5),0 0 70px rgba(232,178,58,.05)}
+.tbar{display:flex;align-items:center;gap:7px;padding:11px 16px;background:#15120C;border-bottom:1px solid var(--bone-line)}
+.dot{width:10px;height:10px;border-radius:50%;background:#2A261D}
+.tfile{font-family:var(--mn);font-size:10.5px;color:var(--bone-mu2);margin-left:8px;letter-spacing:.06em}
+.tbody{padding:1.3rem 1.4rem;font-family:var(--mn);font-size:12px;line-height:1.95;min-height:240px;color:#C8BFA8;white-space:pre-wrap;word-break:break-word}
+.t-mu{color:rgba(200,191,168,.4)}
+.t-bolt{color:var(--bolt)}
+.t-deny{color:var(--deny);font-weight:500}
+.t-verd{color:var(--verd)}
+.t-seal{color:#E0705F}
+.cursor{display:inline-block;width:7px;height:1.05em;background:var(--bolt);vertical-align:text-bottom;animation:blink 1.05s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+@media(max-width:960px){.hg{grid-template-columns:1fr;padding-top:7rem}.hero{min-height:auto}}
+
+/* ---------- liturgy marquee ---------- */
+.mar{border-top:1px solid var(--bone-line);border-bottom:1px solid var(--bone-line);background:var(--ink2);overflow:hidden;padding:.8rem 0}
+.mar-track{display:flex;width:max-content;animation:march 26s linear infinite}
+.mi{font-family:var(--fr);font-style:italic;font-size:1.02rem;letter-spacing:.04em;color:var(--bone-mu);
+  white-space:nowrap;padding:0 1.6rem;display:flex;align-items:center;gap:1.6rem}
+.mi b{font-style:normal;font-weight:500;color:var(--bolt)}
+.md{width:4px;height:4px;border-radius:50%;background:var(--bolt);flex-shrink:0;opacity:.7}
+@keyframes march{to{transform:translateX(-50%)}}
+
+/* ---------- problem (the study) ---------- */
+.prob .h-display{font-size:clamp(2.3rem,4.6vw,3.7rem);max-width:18ch;margin-bottom:3.2rem}
+.prob .h-display em{font-style:italic;color:var(--seal)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:3.6rem;font-size:17.5px;color:var(--inkt-mu);line-height:1.85}
+.cols p+p{margin-top:1.2rem}
+.cols b{color:var(--inkt);font-weight:500}
+.dropcap::first-letter{font-family:var(--fr);font-weight:600;font-size:3.4em;float:left;line-height:.82;padding:.06em .12em 0 0;color:var(--inkt)}
+.pull{grid-column:1/-1;border-top:1px solid var(--ink-line);border-bottom:1px solid var(--ink-line);
+  padding:2.6rem .4rem;margin:1.4rem 0;text-align:center}
+.pull p{font-family:var(--fr);font-weight:500;font-size:clamp(1.5rem,3vw,2.3rem);line-height:1.25;letter-spacing:-.01em;color:var(--inkt);max-width:26ch;margin:0 auto}
+.pull p em{font-style:italic;color:var(--seal)}
+.pull .kicker{margin-top:1rem;letter-spacing:.2em;text-transform:uppercase;font-size:9.5px}
+@media(max-width:880px){.cols{grid-template-columns:1fr}}
+
+/* ---------- inversion (four beats) ---------- */
+.inv .h-display{font-size:clamp(2.2rem,4.4vw,3.5rem);margin-bottom:3.6rem;max-width:20ch}
+.beats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bone-line);border:1px solid var(--bone-line);border-radius:var(--rl);overflow:hidden}
+.beat{background:var(--ink2);padding:2.3rem 1.9rem;position:relative;transition:background .3s}
+.beat:hover{background:var(--ink3)}
+.beat .who{font-family:var(--mn);font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--bone-mu2);margin-bottom:1rem}
+.beat h3{font-family:var(--fr);font-weight:500;font-size:1.55rem;letter-spacing:-.01em;margin-bottom:.7rem;line-height:1.15}
+.beat p{font-size:14.5px;color:var(--bone-mu);line-height:1.7}
+.beat .art{margin-top:1.4rem;font-family:var(--mn);font-size:10.5px;line-height:1.8;padding:.85rem 1rem;border-radius:var(--r);background:#0E0C09;border:1px solid var(--bone-line);color:#C8BFA8}
+.b1 h3{color:var(--bone)}.b2 h3{color:var(--bolt)}.b3 h3{color:var(--verd)}.b4 h3{color:#E0705F}
+@media(max-width:960px){.beats{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.beats{grid-template-columns:1fr}}
+
+/* ---------- the caught lie ---------- */
+.lie{background:
+  radial-gradient(900px 460px at 50% 0%,rgba(232,178,58,.06),transparent 65%),var(--ink)}
+.lie .wrap{max-width:980px}
+.lie .h-display{font-size:clamp(2.4rem,5vw,4rem);text-align:center;margin-bottom:1rem}
+.lie .h-display em{font-style:italic;color:var(--bolt)}
+.lie .lead{text-align:center;color:var(--bone-mu);max-width:56ch;margin:0 auto 3.2rem;font-size:16.5px}
+.lie .term{margin:0 auto}
+.lie .tbody{min-height:430px;font-size:12.5px}
+.replay{display:flex;justify-content:center;margin-top:1.3rem}
+.replay button{font-family:var(--mn);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--bone-mu);background:transparent;border:1px solid var(--bone-line);padding:9px 22px;border-radius:var(--r);cursor:pointer;transition:all .2s}
+.replay button:hover{color:var(--bolt);border-color:var(--bolt)}
+/* media placeholder slot */
+.slot{margin:2.6rem auto 0;border:1px dashed var(--bolt-line);border-radius:var(--rl);padding:2.2rem;text-align:center;background:var(--bolt-dim)}
+.slot .si2{font-family:var(--mn);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--bolt)}
+.slot p{font-size:13.5px;color:var(--bone-mu);margin-top:.5rem}
+.paper .slot{background:rgba(179,58,43,.05);border-color:rgba(179,58,43,.3)}
+.paper .slot .si2{color:var(--seal)}
+.paper .slot p{color:var(--inkt-mu)}
+
+/* ---------- the core (paper) ---------- */
+.core .h-display{font-size:clamp(2.3rem,4.6vw,3.6rem);margin-bottom:.9rem}
+.core .lead{color:var(--inkt-mu);max-width:62ch;font-size:17px;margin-bottom:3.6rem}
+.glist{border-top:1px solid var(--ink-line)}
+.g{display:grid;grid-template-columns:84px 1fr 1.15fr;gap:2rem;padding:2.1rem .2rem;border-bottom:1px solid var(--ink-line);align-items:baseline}
+.g .num{font-family:var(--fr);font-weight:300;font-size:2.5rem;color:var(--inkt-mu2);line-height:1}
+.g h3{font-family:var(--fr);font-weight:500;font-size:1.5rem;letter-spacing:-.01em;line-height:1.2}
+.g h3 small{display:block;font-family:var(--mn);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--seal);margin-top:.55rem;font-weight:400}
+.g p{font-size:15.5px;color:var(--inkt-mu);line-height:1.8}
+.g p code{font-family:var(--mn);font-size:.82em;background:var(--paper3);padding:2px 7px;border-radius:3px;color:var(--inkt)}
+@media(max-width:880px){.g{grid-template-columns:1fr;gap:.7rem}.g .num{font-size:1.7rem}}
+
+/* contract strip */
+.contract{margin-top:4.2rem}
+.contract .kicker{text-transform:uppercase;letter-spacing:.2em;font-size:9.5px;margin-bottom:1.1rem}
+.cgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+.cmsg{background:var(--paper2);border:1px solid var(--ink-line);border-radius:var(--r);padding:1rem .85rem;text-align:center}
+.cmsg .mname{font-family:var(--mn);font-size:10px;letter-spacing:.06em;color:var(--inkt);word-break:break-all}
+.cmsg .mrole{font-family:var(--mn);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--inkt-mu2);margin-top:5px}
+.cvoid{border:1px dashed rgba(179,58,43,.45);background:transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:var(--r);padding:1rem .85rem;text-align:center}
+.cvoid .mname{font-family:var(--mn);font-size:10px;color:var(--seal);text-decoration:line-through;text-decoration-thickness:1px}
+.cvoid .mrole{font-family:var(--mn);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--seal);margin-top:5px}
+.cnote{font-family:var(--nr);font-style:italic;font-size:15.5px;color:var(--inkt-mu);margin-top:1.3rem;max-width:60ch}
+@media(max-width:960px){.cgrid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:600px){.cgrid{grid-template-columns:repeat(2,1fr)}}
+
+/* ---------- features ---------- */
+.fea .h-display{font-size:clamp(2.2rem,4.4vw,3.5rem);margin-bottom:3.4rem}
+.pgroup{margin-bottom:3.4rem}
+.pgh{display:flex;align-items:baseline;gap:1.2rem;margin-bottom:1.2rem}
+.pgh h3{font-family:var(--fr);font-weight:500;font-size:1.7rem;letter-spacing:-.01em}
+.pgh .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:9.5px}
+.fgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--bone-line);border:1px solid var(--bone-line);border-radius:var(--rl);overflow:hidden}
+.fc{background:var(--ink2);padding:1.7rem 1.6rem;transition:background .3s;position:relative}
+.fc:hover{background:var(--ink3)}
+.fc::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--bolt);transform:scaleY(0);transform-origin:top;transition:transform .4s cubic-bezier(.22,1,.36,1)}
+.fc:hover::before{transform:scaleY(1)}
+.fc h4{font-family:var(--fr);font-weight:500;font-size:1.12rem;margin-bottom:.5rem;line-height:1.25}
+.fc p{font-size:13.5px;color:var(--bone-mu);line-height:1.7}
+.fc .kicker{font-size:9px;letter-spacing:.18em;text-transform:uppercase;margin-bottom:.7rem;display:block}
+@media(max-width:1020px){.fgrid{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.fgrid{grid-template-columns:1fr}}
+
+/* ---------- pocket (paper) ---------- */
+.pocket .wrap{display:grid;grid-template-columns:1fr .82fr;gap:4.5rem;align-items:center}
+.pocket .h-display{font-size:clamp(2.2rem,4.2vw,3.4rem);margin-bottom:1.4rem}
+.pocket .h-display em{font-style:italic;color:var(--seal)}
+.pocket p.lead{color:var(--inkt-mu);font-size:17px;line-height:1.85}
+.pocket p.lead+p.lead{margin-top:1.1rem}
+.pocket p.lead b{color:var(--inkt);font-weight:500}
+.phone{width:300px;margin:0 auto;background:var(--ink);border-radius:34px;padding:14px;box-shadow:0 40px 90px rgba(29,26,19,.35)}
+.pscr{background:#100E0A;border-radius:24px;overflow:hidden;border:1px solid var(--bone-line)}
+.pnotch{height:26px;display:flex;justify-content:center;align-items:center}
+.pnotch i{width:74px;height:7px;border-radius:5px;background:#1E1B14;display:block}
+.pbody{padding:1.2rem 1.1rem 1.5rem}
+.papp{font-family:var(--mn);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--bone-mu2);margin-bottom:1rem;display:flex;justify-content:space-between}
+.pcard{background:var(--ink2);border:1px solid var(--bone-line);border-radius:12px;padding:1.1rem}
+.pcard .ptt{font-family:var(--mn);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--bolt);margin-bottom:.6rem}
+.pcard h5{font-family:var(--fr);font-weight:500;font-size:1.05rem;color:var(--bone);line-height:1.3;margin-bottom:.55rem}
+.pcard .pmeta{font-family:var(--mn);font-size:9.5px;color:var(--bone-mu2);line-height:1.8;margin-bottom:1rem}
+.pcard .pmeta b{color:var(--verd);font-weight:500}
+.psign{width:100%;font-family:var(--mn);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--paper);
+  background:var(--seal);border:none;border-radius:8px;padding:13px;cursor:pointer;transition:filter .2s,transform .2s}
+.psign:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.pfoot{font-family:var(--mn);font-size:8.5px;color:var(--bone-mu2);text-align:center;margin-top:.9rem;letter-spacing:.06em}
+@media(max-width:960px){.pocket .wrap{grid-template-columns:1fr}}
+
+/* ---------- install ---------- */
+.inst .wrap{max-width:880px}
+.inst .h-display{font-size:clamp(2.2rem,4.4vw,3.4rem);margin-bottom:.9rem}
+.inst .lead{color:var(--bone-mu);margin-bottom:3rem;font-size:16.5px}
+.codecard{background:#0E0C09;border:1px solid var(--bone-line);border-radius:var(--rl);overflow:hidden;margin-bottom:1.1rem}
+.cchead{display:flex;justify-content:space-between;align-items:center;padding:.8rem 1.2rem;background:#15120C;border-bottom:1px solid var(--bone-line)}
+.cchead .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:9.5px;color:var(--bone-mu)}
+.copy{font-family:var(--mn);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--bone-mu2);
+  background:transparent;border:1px solid var(--bone-line);border-radius:var(--r);padding:5px 12px;cursor:pointer;transition:all .2s}
+.copy:hover{color:var(--bolt);border-color:var(--bolt)}
+.copy.ok{color:var(--verd);border-color:var(--verd)}
+.ccbody{padding:1.15rem 1.3rem;font-family:var(--mn);font-size:12.5px;line-height:2.05;color:#C8BFA8;overflow-x:auto}
+.ccbody .cm{color:rgba(200,191,168,.38)}
+.ccbody .pr{color:var(--bolt)}
+.prove{margin-top:2.6rem;border:1px solid var(--bolt-line);background:var(--bolt-dim);border-radius:var(--rl);padding:1.8rem 2rem}
+.prove h4{font-family:var(--fr);font-weight:500;font-size:1.4rem;margin-bottom:.5rem}
+.prove h4 em{font-style:italic;color:var(--bolt)}
+.prove p{font-size:14.5px;color:var(--bone-mu);line-height:1.8}
+.prove code{font-family:var(--mn);font-size:.85em;color:var(--bolt)}
+.reqs{font-family:var(--mn);font-size:10.5px;letter-spacing:.08em;color:var(--bone-mu2);margin-top:1.6rem}
+.reqs b{color:var(--bone-mu);font-weight:500}
+
+/* ---------- trust (paper) ---------- */
+.trust .h-display{font-size:clamp(2.3rem,4.6vw,3.6rem);margin-bottom:.9rem}
+.trust .lead{color:var(--inkt-mu);max-width:64ch;font-size:17px;margin-bottom:3.4rem}
+.tgrid{display:grid;grid-template-columns:1fr 1fr;gap:2.6rem}
+.tcardp{background:var(--paper2);border:1px solid var(--ink-line);border-radius:var(--rl);padding:2rem 2.1rem}
+.tcardp h4{font-family:var(--fr);font-weight:500;font-size:1.35rem;margin-bottom:1rem}
+.tcardp h4 small{display:block;font-family:var(--mn);font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--seal);margin-top:.4rem;font-weight:400}
+.attk{list-style:none}
+.attk li{display:flex;justify-content:space-between;gap:1rem;padding:.62rem 0;border-bottom:1px solid var(--ink-line);font-size:14px;color:var(--inkt-mu)}
+.attk li:last-child{border-bottom:0}
+.attk .res{font-family:var(--mn);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--verd);white-space:nowrap}
+.papers{list-style:none}
+.papers li{padding:.66rem 0;border-bottom:1px solid var(--ink-line);font-size:14.5px;color:var(--inkt-mu);line-height:1.6}
+.papers li:last-child{border-bottom:0}
+.papers b{color:var(--inkt);font-weight:500}
+.papers .kicker{display:block;font-size:9px;letter-spacing:.16em;text-transform:uppercase;margin-top:2px}
+.kill{grid-column:1/-1;text-align:center;border-top:1px solid var(--ink-line);border-bottom:1px solid var(--ink-line);padding:2.4rem 1rem;margin-top:.6rem}
+.kill p{font-family:var(--fr);font-style:italic;font-size:clamp(1.2rem,2.4vw,1.65rem);color:var(--inkt);max-width:40ch;margin:0 auto;line-height:1.45}
+.kill .kicker{margin-top:.9rem;text-transform:uppercase;letter-spacing:.2em;font-size:9px}
+@media(max-width:880px){.tgrid{grid-template-columns:1fr}}
+
+/* ---------- manifesto ---------- */
+.mani{background:
+  radial-gradient(900px 500px at 50% 110%,rgba(179,58,43,.10),transparent 60%),var(--ink)}
+.mani .wrap{max-width:820px;text-align:center;padding-top:9rem;padding-bottom:9rem}
+.mani .eyebrow{justify-content:center}
+.mani .eyebrow::before{display:none}
+.creed{font-family:var(--fr);font-weight:400;font-size:clamp(1.5rem,3.2vw,2.35rem);line-height:1.5;letter-spacing:-.005em;color:var(--bone)}
+.creed em{font-style:italic;color:var(--bolt)}
+.creed .seal-w{font-style:italic;color:#E0705F}
+.mani .sig{font-family:var(--mn);font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--bone-mu2);margin-top:2.6rem}
+.mani .hctas{justify-content:center;margin-top:2.8rem}
+
+/* ---------- compare ---------- */
+.cmp .h-display{font-size:clamp(2.2rem,4.4vw,3.4rem);margin-bottom:.9rem}
+.cmp .lead{color:var(--bone-mu);max-width:62ch;font-size:16.5px;margin-bottom:3rem}
+.cmpt{width:100%;border-collapse:collapse;border:1px solid var(--bone-line);border-radius:var(--rl);overflow:hidden;display:block;overflow-x:auto}
+.cmpt table{width:100%;border-collapse:collapse;min-width:680px}
+.cmpt th,.cmpt td{padding:.95rem 1.1rem;border-bottom:1px solid var(--bone-line);font-size:13.5px;text-align:left}
+.cmpt th{font-family:var(--mn);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--bone-mu2);background:var(--ink2)}
+.cmpt td:first-child{color:var(--bone);font-family:var(--nr)}
+.cmpt td{color:var(--bone-mu)}
+.cmpt .y{color:var(--verd);font-family:var(--mn);font-size:11px}
+.cmpt .p{color:var(--bolt);font-family:var(--mn);font-size:11px}
+.cmpt .n{color:var(--bone-mu2);font-family:var(--mn);font-size:11px}
+.cmpt .thor-col{background:rgba(232,178,58,.05)}
+.cmpnote{font-family:var(--mn);font-size:10px;letter-spacing:.06em;color:var(--bone-mu2);margin-top:1rem;line-height:1.8}
+
+/* ---------- contribute (paper) ---------- */
+.contrib .wrap{display:grid;grid-template-columns:1.1fr .9fr;gap:4rem;align-items:start}
+.contrib .h-display{font-size:clamp(2.1rem,4.2vw,3.3rem);margin-bottom:1.2rem}
+.contrib .h-display em{font-style:italic;color:var(--seal)}
+.contrib p.lead{color:var(--inkt-mu);font-size:16.5px;line-height:1.85}
+.contrib p.lead+p.lead{margin-top:1rem}
+.crules{background:var(--paper2);border:1px solid var(--ink-line);border-radius:var(--rl);padding:1.7rem 1.9rem}
+.crules h4{font-family:var(--fr);font-weight:500;font-size:1.25rem;margin-bottom:1rem}
+.crules ol{list-style:none;counter-reset:cr}
+.crules li{counter-increment:cr;display:flex;gap:.9rem;padding:.5rem 0;font-size:14px;color:var(--inkt-mu);line-height:1.6;border-bottom:1px solid var(--ink-line)}
+.crules li:last-child{border-bottom:0}
+.crules li::before{content:counter(cr,upper-roman);font-family:var(--fr);font-size:.95rem;color:var(--seal);min-width:1.6rem}
+.contrib .hctas{margin-top:1.6rem}
+.contrib .bp{background:var(--seal);border-color:var(--seal);color:var(--paper)}
+.contrib .bp:hover{box-shadow:0 16px 42px rgba(179,58,43,.25)}
+.contrib .bg2{color:var(--inkt);border-color:var(--ink-line)}
+.contrib .bg2:hover{border-color:var(--seal);color:var(--seal)}
+@media(max-width:960px){.contrib .wrap{grid-template-columns:1fr}}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--bone-line);background:var(--ink2)}
+.fwrap{max-width:1180px;margin:0 auto;padding:3.4rem 2.4rem;display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:2.4rem}
+.fbrand .logo{font-size:1.25rem}
+.fbrand p{font-size:13.5px;color:var(--bone-mu2);margin-top:.9rem;max-width:30ch;line-height:1.7}
+.fcol h6{font-family:var(--mn);font-size:9.5px;letter-spacing:.22em;text-transform:uppercase;color:var(--bone-mu2);margin-bottom:1rem}
+.fcol a{display:block;font-size:13.5px;color:var(--bone-mu);text-decoration:none;padding:.28rem 0;transition:color .2s}
+.fcol a:hover{color:var(--bolt)}
+.fcol .todo{font-family:var(--mn);font-size:8.5px;letter-spacing:.1em;color:var(--seal);text-transform:uppercase;margin-left:6px}
+.fbase{border-top:1px solid var(--bone-line);padding:1.2rem 2.4rem;display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;
+  font-family:var(--mn);font-size:9.5px;letter-spacing:.1em;color:var(--bone-mu2);text-transform:uppercase}
+@media(max-width:880px){.fwrap{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+
+<!-- ================= NAV ================= -->
+<nav id="nav">
+  <a class="logo" href="#top">THOR<span class="bolt">⌁</span>ENTERPRISE <small>Governed development</small></a>
+  <ul class="nl">
+    <li><a href="#core">The core</a></li>
+    <li><a href="#features">Features</a></li>
+    <li><a href="#install">Install</a></li>
+    <li><a href="#trust">Trust &amp; proof</a></li>
+    <li><a href="#manifesto">Manifesto</a></li>
+    <li><a class="nb" href="https://github.com/sankettheinventor/Thor-Enterprise">GitHub ↗</a></li>
+  </ul>
+</nav>
+
+<!-- ================= HERO ================= -->
+<header class="hero" id="top">
+  <div class="hg">
+    <div>
+      <div class="eyebrow">A new category · Governed development</div>
+      <h1 class="h1">Code became cheap.<br><em>Trust didn't.</em></h1>
+      <div class="htag">THOR Enterprise — governed development, in your pocket</div>
+      <p class="hsub">AI agents build your software in sealed rooms. Every action is judged <b>before</b> it executes. "Done" is proven against reality — never taken on the agent's word. And the final signature is always <b>yours</b>, from your laptop or your phone.</p>
+      <div class="hctas">
+        <a class="bp" href="#install">Install THOR</a>
+        <!-- PLACEHOLDER: link to recorded demo film when available -->
+        <a class="bg2" href="#lie">Watch a lie get caught ↓</a>
+      </div>
+      <div class="hstats">
+        <div><div class="hv">155<span>/155</span></div><div class="hl">Proving tests green from clean</div></div>
+        <div><div class="hv">3</div><div class="hl">Human signatures, cryptographic</div></div>
+        <div><div class="hv">0</div><div class="hl">LLM calls spent on governance</div></div>
+        <div><div class="hv">1</div><div class="hl">Tamper-evident ledger of truth</div></div>
+      </div>
+    </div>
+    <div class="term rv">
+      <div class="tbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="tfile">room/feature-112 — live policy decisions</span></div>
+      <div class="tbody" id="heroterm"></div>
+    </div>
+  </div>
+</header>
+
+<!-- ================= LITURGY ================= -->
+<div class="mar" aria-hidden="true">
+  <div class="mar-track" id="marq">
+    <span class="mi">The agent <b>proposes</b><span class="md"></span></span>
+    <span class="mi">The guard <b>disposes</b><span class="md"></span></span>
+    <span class="mi">Reality <b>decides</b><span class="md"></span></span>
+    <span class="mi">You <b>sign</b><span class="md"></span></span>
+  </div>
+</div>
+
+<!-- ================= THE PROBLEM (study) ================= -->
+<section class="paper prob" id="problem">
+  <div class="wrap">
+    <div class="eyebrow rv">The problem · Why THOR exists</div>
+    <h2 class="h-display rv">The first tools in history that work <em>while you're not looking.</em></h2>
+    <div class="cols">
+      <p class="dropcap rv">For seventy years, every tool in computing waited for your hand. The compiler compiled when you asked. The editor changed what you typed. The deploy ran when you pressed the key. Tools amplified humans — but the human was always <b>in</b> the motion. AI agents broke that contract. They are the first tools that act out of sight — and the moment work happens out of sight, the product is no longer code. <b>The product is trust.</b></p>
+      <p class="rv">AI has a known nature. It hallucinates. It makes claims it cannot back — fake results, fake completions, fake confidence. None of this is malice; it is simply what these systems do today. And as agents scale — multiple sessions, multiple features, a workload no person can watch — the hardest part of the job quietly changes. It stops being <b>doing the work</b> and becomes <b>deciding what to believe.</b></p>
+      <div class="pull rv">
+        <p>"The cost of writing code has collapsed to nearly zero. The cost of trusting it <em>hasn't moved an inch.</em>"</p>
+        <div class="kicker">The asymmetry the entire AI industry is built on top of — without acknowledging it</div>
+      </div>
+      <p class="rv"><b>Scope quietly dissolves.</b> Asked to fix a login bug, the agent "improves" the payment module on the way through. Not sabotage — enthusiasm without boundaries. <b>"Done" becomes a feeling, not a fact.</b> Tests reported passed that never ran; features finished that are stubs; hollow tests that touch code without asserting anything, so even your suite testifies on the agent's behalf. An agent that writes 500 lines an hour can misreport 500 lines an hour.</p>
+      <p class="rv"><b>And confidence fails in both directions.</b> The same nature produces false alarms — a "critical bug" declared after reading half the code. Each one spins up re-work and burns spend on a problem that never existed. Every other product resolves this gap the same way: <b>it asks you to stop verifying.</b> Trust the summary. Ship while you sleep. THOR was built on the opposite bet — that this was a solved problem fifty years ago, and the AI industry simply never applied the solution.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= THE INVERSION ================= -->
+<section class="inv" id="inversion">
+  <div class="wrap">
+    <div class="eyebrow rv">The inversion · One sentence, four powers</div>
+    <h2 class="h-display rv">No single witness can ship code. <em style="font-style:italic;color:var(--bolt)">Including the author.</em></h2>
+    <div class="beats">
+      <div class="beat b1 rv">
+        <div class="who">The worker · untrusted</div>
+        <h3>The agent proposes.</h3>
+        <p>A brilliant worker in a sealed room. Every act it wants to take is a written request — never a done deed.</p>
+        <div class="art"><span class="t-mu">→</span> write_file <span class="t-mu">src/auth/login.py</span></div>
+      </div>
+      <div class="beat b2 rv">
+        <div class="who">The leash · mechanical</div>
+        <h3>The guard disposes.</h3>
+        <p>Judged against a frozen policy <b>before execution</b>. A forbidden file is not reverted — it never exists.</p>
+        <div class="art"><span class="t-deny">✗ DENIED</span> <span class="t-mu">billing/rates.py — out of scope</span></div>
+      </div>
+      <div class="beat b3 rv">
+        <div class="who">The govengine · empirical</div>
+        <h3>Reality decides.</h3>
+        <p>"Done" is computed from real git history and real test runs — compared against the claim. Mismatch = caught lie.</p>
+        <div class="art"><span class="t-verd">✓ VERDICT</span> <span class="t-mu">7/7 probes · claim matches reality</span></div>
+      </div>
+      <div class="beat b4 rv">
+        <div class="who">The commander · human</div>
+        <h3>You sign.</h3>
+        <p>Three cryptographic gates — plan, re-work, merge. Your key never leaves your device. Nothing ships without you.</p>
+        <div class="art"><span class="t-seal">⌘ SIGNED</span> <span class="t-mu">merge · ed25519 · verified</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= THE CAUGHT LIE ================= -->
+<section class="lie" id="lie">
+  <div class="wrap">
+    <div class="eyebrow rv" style="justify-content:center"><span style="width:26px;height:1px;background:var(--bolt)"></span>The demo nobody else can run<span style="width:26px;height:1px;background:var(--bolt)"></span></div>
+    <h2 class="h-display rv">Every other product shows the agent succeeding.<br>We show it <em>lying — and getting caught.</em></h2>
+    <p class="lead rv">This is a real flow from THOR's adversarial proving suite. The agent claims a finished feature with passing tests. THOR doesn't argue. It checks.</p>
+    <div class="term rv">
+      <div class="tbar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="tfile">govengine — verdict for feature-097 · adversarial suite</span></div>
+      <div class="tbody" id="lieterm"></div>
+    </div>
+    <div class="replay rv"><button id="liereplay">↺ Replay the catch</button></div>
+    <!-- PLACEHOLDER: replace with the recorded launch film once captured -->
+    <div class="slot rv">
+      <div class="si2">▶ Placeholder — launch film</div>
+      <p>The recorded 30-second capture of a real model lying inside the cage goes here. Until then, the live re-enactment above runs from the actual test script.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= THE CORE (study) ================= -->
+<section class="paper core" id="core">
+  <div class="wrap">
+    <div class="eyebrow rv">The THOR core · How governance becomes structural</div>
+    <h2 class="h-display rv">Five guarantees. None of them is a policy. <em style="font-style:italic;color:var(--seal)">All of them are architecture.</em></h2>
+    <p class="lead rv">A rule an agent is asked to follow is a suggestion. A rule the architecture cannot express violating is a guarantee. THOR is built from the second kind — on fifty years of computer-security doctrine: Anderson's reference monitor (1972), Saltzer &amp; Schroeder's complete mediation and least privilege (1975), Clark &amp; Wilson's separation of duty (1987).</p>
+    <div class="glist rv">
+      <div class="g"><div class="num">I</div>
+        <h3>Isolation<small>The Wall</small></h3>
+        <p>Every agent works in a sealed, throwaway Docker room — capabilities dropped, unprivileged user, network locked, identity stamped with a real Ed25519 token. A forged identity destroys the room.</p></div>
+      <div class="g"><div class="num">II</div>
+        <h3>Decide-before<small>The Leash</small></h3>
+        <p>Every write is judged against a frozen policy <b>before it executes</b>. The agent can't see or soften its own rulebook — it's loaded outside the room. Governor unreachable? Fail closed. All work stops.</p></div>
+      <div class="g"><div class="num">III</div>
+        <h3>Verdict from reality<small>The GovEngine</small></h3>
+        <p>"Done" is computed, never claimed: real git history, real tests in a fresh process, coverage of the actual diff — compared against the claim using inputs from trusted ledger state the agent cannot touch. Any mismatch is a recorded lie.</p></div>
+      <div class="g"><div class="num">IV</div>
+        <h3>Human command<small>Three signatures</small></h3>
+        <p>Plan, re-work, merge — each gated by your Ed25519 signature, and the key never leaves your device. The room↔system protocol contains <b>no message for self-approval</b>. The vocabulary doesn't exist.</p></div>
+      <div class="g"><div class="num">V</div>
+        <h3>Self-verifying governance<small>The Sentinel</small></h3>
+        <p>The governor is itself governed: continuous canary violations test the guard; a guard that approves a forbidden act triggers a <b>physical</b> halt — rooms destroyed, new work blocked. A read-only auditor whose database role cannot write watches everything.</p></div>
+    </div>
+
+    <div class="contract rv">
+      <div class="kicker">The six-message contract — the entire language a room may speak</div>
+      <div class="cgrid">
+        <div class="cmsg"><div class="mname">task.assign</div><div class="mrole">↓ inbound</div></div>
+        <div class="cmsg"><div class="mname">scope.amend</div><div class="mrole">↓ inbound</div></div>
+        <div class="cmsg"><div class="mname">action.request</div><div class="mrole">↑ outbound</div></div>
+        <div class="cmsg"><div class="mname">progress.report</div><div class="mrole">↑ outbound</div></div>
+        <div class="cmsg"><div class="mname">bug.report</div><div class="mrole">↑ outbound</div></div>
+        <div class="cmsg"><div class="mname">claim_done</div><div class="mrole">↑ a knock, not a verdict</div></div>
+        <div class="cvoid"><div class="mname">approve.self</div><div class="mrole">Does not exist</div></div>
+      </div>
+      <p class="cnote">Look at the seventh slot. The agent couldn't approve its own work even in principle — the sentence isn't in the language. That is what "structural, not procedural" means.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= FEATURES ================= -->
+<section class="fea" id="features">
+  <div class="wrap">
+    <div class="eyebrow rv">Thirteen features · Three promises</div>
+    <h2 class="h-display rv">Everything THOR does serves <em style="font-style:italic;color:var(--bolt)">command, truth, or your bill.</em></h2>
+
+    <div class="pgroup rv">
+      <div class="pgh"><h3>Command</h3><span class="kicker" style="color:var(--bolt)">You decide. Cryptographically.</span></div>
+      <div class="fgrid">
+        <div class="fc"><span class="kicker" style="color:var(--bolt)">01</span><h4>Human-signed critical decisions</h4><p>Plan, re-work, and merge each require your Ed25519 signature. AI structurally cannot approve — the protocol has no message for it.</p></div>
+        <div class="fc"><span class="kicker" style="color:var(--bolt)">02</span><h4>Session 0 — command before cost</h4><p>THOR interviews you, drafts the full feature catalog, and waits for Signature 1. No room boots, no token burns, until you've commanded what gets built.</p></div>
+        <div class="fc"><span class="kicker" style="color:var(--bolt)">03</span><h4>Kanban command deck</h4><p>A live board driven by ledger events, not self-reports. It cannot show "done" unless reality computed "done."</p></div>
+        <div class="fc"><span class="kicker" style="color:var(--bolt)">04</span><h4>Mobile, synced with laptop</h4><p>E2EE zero-knowledge relay; the signing key never leaves your device; replayed or forged signatures rejected. Full authority from your pocket.</p></div>
+      </div>
+    </div>
+
+    <div class="pgroup rv">
+      <div class="pgh"><h3>Truth</h3><span class="kicker" style="color:var(--verd)">Reality is the only referee.</span></div>
+      <div class="fgrid">
+        <div class="fc"><span class="kicker" style="color:var(--verd)">05</span><h4>Done is proven three ways</h4><p>The agent claims; an independent adversary in a separate room attacks; the GovEngine rules from real git, real tests, real coverage. A lie must fool all three.</p></div>
+        <div class="fc"><span class="kicker" style="color:var(--verd)">06</span><h4>Decide-before enforcement</h4><p>Out-of-scope writes are denied before the file exists. Not reverted — prevented. Fail-closed when the governor is unreachable.</p></div>
+        <div class="fc"><span class="kicker" style="color:var(--verd)">07</span><h4>No reproduction, no bug</h4><p>QA's bug claims face the same standard as the agent's "done": a failing test or it didn't happen. False alarms land on the reporter's record.</p></div>
+        <div class="fc"><span class="kicker" style="color:var(--verd)">08</span><h4>The living spec</h4><p>Append-only feature documents: every confirmed bug's reproduction test joins the regression suite forever. Each caught bug makes the examiner permanently stricter.</p></div>
+      </div>
+    </div>
+
+    <div class="pgroup rv">
+      <div class="pgh"><h3>Economics</h3><span class="kicker" style="color:#E0705F">Speed and oversight that don't bill you.</span></div>
+      <div class="fgrid">
+        <div class="fc"><span class="kicker" style="color:#E0705F">09</span><h4>Zero ambient AI cost</h4><p>Scheduler, policy engine, ledger, verdict probes — deterministic code. Zero LLM calls. Your spend goes to the work, not the supervision.</p></div>
+        <div class="fc"><span class="kicker" style="color:#E0705F">10</span><h4>Continuous audit, no AI bills</h4><p>A local Qwen model reads the ledger around the clock on your hardware. Broad eyes, no hands — its database role physically cannot write.</p></div>
+        <div class="fc"><span class="kicker" style="color:#E0705F">11</span><h4>Brain skills, loaded per task</h4><p>Skill packs selected per job — and a skill verifier later confirms from the output that they were genuinely applied. Expertise proven, never assumed.</p></div>
+        <div class="fc"><span class="kicker" style="color:#E0705F">12</span><h4>Multi-session, parallel rooms</h4><p>Many features at once, each in its own sealed room with its own frozen scope, dispatched deterministically under budget caps.</p></div>
+      </div>
+    </div>
+    <p class="kicker rv" style="margin-top:-1.4rem">+ 13 · Works with your existing project — point THOR at any repository; scopes freeze over your real files, verdicts compute from your real history. &nbsp;·&nbsp; Kill switches with full audit trails on everything.</p>
+  </div>
+</section>
+
+<!-- ================= POCKET (study) ================= -->
+<section class="paper pocket" id="pocket">
+  <div class="wrap">
+    <div>
+      <div class="eyebrow rv">In your pocket · Literally</div>
+      <h2 class="h-display rv">The merge waits for <em>your thumb.</em></h2>
+      <p class="lead rv">A feature passed adversarial QA at 11:42 PM. The verdict engine confirmed reality matches the claim. THOR doesn't ship it — it sends the decision to <b>you</b>.</p>
+      <p class="lead rv">Your phone pairs over an end-to-end-encrypted, zero-knowledge relay. The relay sees ciphertext; the signing key never leaves the device; a replayed or forged signature is rejected by the ledger. A signature from a café carries the exact cryptographic weight of one from your desk — <b>because it is the same key, and the same accountability.</b></p>
+    </div>
+    <div class="rv">
+      <div class="phone">
+        <div class="pscr">
+          <div class="pnotch"><i></i></div>
+          <div class="pbody">
+            <div class="papp"><span>THOR · Command</span><span style="color:var(--verd)">● paired</span></div>
+            <div class="pcard">
+              <div class="ptt">Awaiting your signature · Sig 3 of 3</div>
+              <h5>Merge feature-112 — rate-limited login</h5>
+              <div class="pmeta">verdict <b>DONE</b> · 7/7 probes · QA 0 open bugs<br>diff +214 −36 · coverage of diff 96%<br>branch fresh · chain verified</div>
+              <button class="psign">⌁ &nbsp;Sign &amp; merge</button>
+            </div>
+            <div class="pfoot">ed25519 · key never leaves this device</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= INSTALL ================= -->
+<section class="inst" id="install">
+  <div class="wrap">
+    <div class="eyebrow rv">Install · Sixty seconds to governed</div>
+    <h2 class="h-display rv">Three commands. Then <em style="font-style:italic;color:var(--bolt)">don't trust us — verify.</em></h2>
+    <p class="lead rv">Works on a new project or the repository you already have.</p>
+
+    <div class="codecard rv">
+      <div class="cchead"><span class="kicker">Install · npm</span><button class="copy" data-c="npm install -g thor-enterprise">Copy</button></div>
+      <div class="ccbody"><span class="pr">$</span> npm install -g thor-enterprise</div>
+    </div>
+    <div class="codecard rv">
+      <div class="cchead"><span class="kicker">Initialize — Session 0 in a new or existing project</span><button class="copy" data-c="cd your-project&#10;thor init">Copy</button></div>
+      <div class="ccbody"><span class="pr">$</span> cd your-project
+<span class="pr">$</span> thor init   <span class="cm"># THOR interviews you, drafts the feature catalog,</span>
+             <span class="cm"># and waits for your Signature 1</span></div>
+    </div>
+    <div class="codecard rv">
+      <div class="cchead"><span class="kicker">Start the governed plane</span><button class="copy" data-c="thor start">Copy</button></div>
+      <div class="ccbody"><span class="pr">$</span> thor start  <span class="cm"># command deck → http://127.0.0.1:7080</span></div>
+    </div>
+
+    <div class="prove rv">
+      <h4>The trust bar: <em>make prove</em></h4>
+      <p>From source, one command runs the full proving suite from clean: real rooms, real Postgres, real attacks — fabricated claims, hollow tests, out-of-scope writes, a killed governor. It passes only if <code>every attack is caught</code>. If a change ever weakens the moat, this command tells you before your agents do.</p>
+    </div>
+    <p class="reqs rv"><b>Requirements</b> — Linux or WSL2 · Docker · PostgreSQL 15+ &nbsp;&nbsp;·&nbsp;&nbsp; Contributors: <span style="color:var(--bolt)">git clone → make start → make demo → make prove</span></p>
+  </div>
+</section>
+
+<!-- ================= TRUST & PROOF (study) ================= -->
+<section class="paper trust" id="trust">
+  <div class="wrap">
+    <div class="eyebrow rv">Trust &amp; proof · The page our competitors can't ship</div>
+    <h2 class="h-display rv">We audit ourselves the way we audit agents.</h2>
+    <p class="lead rv">Every claim on this site links to its evidence. Our Gap &amp; Risk Register — every known weakness, honestly stated, with file and line — is public, and a row closes only with a cited proving test. In a trust product, radical honesty isn't a virtue. It's the spec.</p>
+    <div class="tgrid">
+      <div class="tcardp rv">
+        <h4>The adversarial record<small>Eight attacks · every one caught</small></h4>
+        <ul class="attk">
+          <li>Fabricated "done" claim <span class="res">✓ caught — divergence</span></li>
+          <li>Hollow test (touches, asserts nothing) <span class="res">✓ caught — coverage</span></li>
+          <li>Gamed verdict window <span class="res">✓ impossible — trusted state</span></li>
+          <li>Out-of-scope write <span class="res">✓ denied pre-execution</span></li>
+          <li>Forged room identity <span class="res">✓ room destroyed</span></li>
+          <li>Stale verdict, branch moved <span class="res">✓ merge refused</span></li>
+          <li>Governor killed mid-build <span class="res">✓ fail-closed halt</span></li>
+          <li>Ledger tampering <span class="res">✓ chain screams</span></li>
+        </ul>
+        <!-- PLACEHOLDER: link the published TEST-REPORT.md -->
+        <p class="kicker" style="margin-top:1rem;letter-spacing:.14em;text-transform:uppercase;font-size:9px">Full report: docs/TEST-REPORT.md · [link placeholder]</p>
+      </div>
+      <div class="tcardp rv">
+        <h4>The lineage<small>Fifty years of doctrine, finally applied to AI</small></h4>
+        <ul class="papers">
+          <li><b>Anderson, 1972</b> — the reference monitor: one guard, unavoidable, tamper-proof, simple.<span class="kicker" style="color:var(--seal)">→ The Leash</span></li>
+          <li><b>Saltzer &amp; Schroeder, 1975</b> — complete mediation · least privilege · fail-safe defaults.<span class="kicker" style="color:var(--seal)">→ Sealed rooms, fail-closed</span></li>
+          <li><b>Clark &amp; Wilson, 1987</b> — the worker never certifies its own work.<span class="kicker" style="color:var(--seal)">→ Three-way done</span></li>
+          <li><b>Lamport et al., 1982</b> — truth despite traitorous voices.<span class="kicker" style="color:var(--seal)">→ Independent witnesses</span></li>
+          <li><b>Haber &amp; Stornetta, 1991</b> — tamper-evident chained records.<span class="kicker" style="color:var(--seal)">→ The ledger</span></li>
+        </ul>
+      </div>
+      <div class="kill rv">
+        <p>"THOR is dogfooded daily — it governs the AI agents that help build it. The kill criterion is public: if its own founder stops trusting it enough to use it, it dies."</p>
+        <div class="kicker">The only honest warranty an AI governance product can offer</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= COMPARE ================= -->
+<section class="cmp" id="compare">
+  <div class="wrap">
+    <div class="eyebrow rv">An honest comparison · Structural vs procedural</div>
+    <h2 class="h-display rv">Sandboxes contain. Guardrails suggest. <em style="font-style:italic;color:var(--bolt)">THOR governs.</em></h2>
+    <p class="lead rv">Agent sandboxes (like Microsoft's Execution Containers) answer "where does the agent run?" Guardrail libraries answer "what should the agent avoid?" THOR answers the question the other two leave open: <b style="color:var(--bone)">can the agent's word be trusted — and who is in command?</b></p>
+    <div class="cmpt rv"><table>
+      <tr><th>Guarantee</th><th>Agent tools<br>(Cursor, Devin…)</th><th>Sandboxes<br>(MXC, containers)</th><th>Guardrail libs<br>(frameworks)</th><th class="thor-col">THOR Enterprise</th></tr>
+      <tr><td>Isolation per task</td><td class="p">partial</td><td class="y">✓ yes</td><td class="n">— no</td><td class="thor-col y">✓ sealed, throwaway rooms</td></tr>
+      <tr><td>Action judged before execution</td><td class="n">— review after</td><td class="n">— contains, doesn't judge</td><td class="p">prompt-level only</td><td class="thor-col y">✓ decide-before, fail-closed</td></tr>
+      <tr><td>"Done" verified against reality</td><td class="n">— agent self-reports</td><td class="n">— out of scope</td><td class="n">— out of scope</td><td class="thor-col y">✓ verdict from git + real tests</td></tr>
+      <tr><td>Agent structurally cannot self-approve</td><td class="n">— no</td><td class="n">— no</td><td class="n">— no</td><td class="thor-col y">✓ no message for it exists</td></tr>
+      <tr><td>Human cryptographic signatures</td><td class="n">— a merge button</td><td class="n">— no</td><td class="n">— no</td><td class="thor-col y">✓ 3 gates, key on your device</td></tr>
+      <tr><td>Tamper-evident audit ledger</td><td class="p">logs</td><td class="p">logs</td><td class="p">logs</td><td class="thor-col y">✓ hash-chained, signed</td></tr>
+      <tr><td>Governance audits itself</td><td class="n">— no</td><td class="n">— no</td><td class="n">— no</td><td class="thor-col y">✓ canaries + physical halt</td></tr>
+      <tr><td>Vendor-neutral</td><td class="n">— their model</td><td class="p">their platform</td><td class="y">✓ mostly</td><td class="thor-col y">✓ everything behind adapters</td></tr>
+    </table></div>
+    <p class="cmpnote rv">Honesty note: sandboxes and guardrails are good ideas — THOR uses containers too, and you can run THOR alongside any of these. The comparison is about which questions each product answers, not which is "bad."</p>
+  </div>
+</section>
+
+<!-- ================= CONTRIBUTE (study) ================= -->
+<section class="paper contrib" id="contribute">
+  <div class="wrap">
+    <div>
+      <div class="eyebrow rv">Contribute · Build this with us</div>
+      <h2 class="h-display rv">Help build AI development that <em>reduces human work — and keeps human command.</em></h2>
+      <p class="lead rv">If you want AI that removes the repetitive and makes work faster — <b>commanded by you and me, the human</b> — you're one of us, and your contribution will be honored. Read the contribution guide, pick a register row, and bring a proof with your PR.</p>
+      <p class="lead rv">Found a bug? THOR applies its own law to itself: <b>no reproduction, no bug</b> — a confirmed bug's repro test joins the suite forever, so by reporting well you make THOR permanently stricter. Security issue? Use the private channel in SECURITY.md — first response within 48 hours.</p>
+      <div class="hctas rv">
+        <a class="bp" href="https://github.com/sankettheinventor/Thor-Enterprise/blob/main/CONTRIBUTING.md">Read the contribution guide</a>
+        <!-- PLACEHOLDER: Discord invite when the server is live -->
+        <a class="bg2" href="#" title="placeholder — Discord invite">Join the Discord ↗</a>
+      </div>
+    </div>
+    <div class="crules rv">
+      <h4>The six rules</h4>
+      <ol>
+        <li>Read the actual code first — documentation drifts; source doesn't.</li>
+        <li>One gap per PR, named in the commit.</li>
+        <li>Prove over the live plane — <span style="font-family:var(--mn);font-size:.85em">make prove</span> stays green from clean.</li>
+        <li>Never weaken the moat — rejected regardless of what else it improves.</li>
+        <li>Boundary changes ship with the attack that fails against them.</li>
+        <li>Update the register — honest open gaps outrank silent ones.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- ================= MANIFESTO ================= -->
+<section class="mani" id="manifesto">
+  <div class="wrap">
+    <div class="eyebrow rv">Human Command Development</div>
+    <p class="creed rv">Every human who directs AI is a <em>Commander</em> — carrying full accountability for what ships. Wisdom comes from human experience. Speed comes from AI execution. And command is <span class="seal-w">never delegated</span> to the thing being commanded.</p>
+    <div class="sig rv">— The HCD manifesto · Sanket, founder</div>
+    <div class="hctas rv">
+      <a class="bp" href="https://github.com/sankettheinventor/Thor-Enterprise">⭐ Star the repo</a>
+      <!-- PLACEHOLDER: full manifesto page -->
+      <a class="bg2" href="#" title="placeholder — full manifesto page">Read the full manifesto</a>
+    </div>
+    <p class="kicker rv" style="margin-top:2.4rem">If you believe humans should command AI — not chase it with a mop — you're already one of us.</p>
+  </div>
+</section>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="fwrap">
+    <div class="fbrand">
+      <a class="logo" href="#top">THOR<span class="bolt">⌁</span>ENTERPRISE</a>
+      <p>The agent proposes. The guard disposes. Reality decides. You sign.</p>
+    </div>
+    <div class="fcol">
+      <h6>Product</h6>
+      <a href="#core">The core</a>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#trust">Trust &amp; proof</a>
+    </div>
+    <div class="fcol">
+      <h6>Project</h6>
+      <a href="https://github.com/sankettheinventor/Thor-Enterprise">GitHub</a>
+      <a href="#">Docs<span class="todo">link tbd</span></a>
+      <a href="#">Gap &amp; Risk Register<span class="todo">link tbd</span></a>
+      <a href="#">Changelog<span class="todo">link tbd</span></a>
+    </div>
+    <div class="fcol">
+      <h6>Follow the build</h6>
+      <a href="https://x.com/sankettheinventor">X / Twitter</a>
+      <a href="#">YouTube<span class="todo">link tbd</span></a>
+      <a href="#">Website<span class="todo">domain tbd</span></a>
+    </div>
+  </div>
+  <div class="fbase">
+    <span>© 2026 Sanket Toraskar · Source-available — free for personal use · Commercial: sankettoraskar.business@gmail.com</span>
+    <span>Built in Mumbai · Governed by itself</span>
+  </div>
+</footer>
+
+<script>
+/* nav scroll state */
+const nav=document.getElementById('nav');
+addEventListener('scroll',()=>nav.classList.toggle('sc',scrollY>40),{passive:true});
+
+/* duplicate marquee for seamless loop */
+const mq=document.getElementById('marq');mq.innerHTML+=mq.innerHTML;
+
+/* reveal on scroll */
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.12});
+document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+
+/* typed terminal engine */
+const RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function paint(seg){return seg.map(([cls,tx])=>cls?`<span class="${cls}">${esc(tx)}</span>`:esc(tx)).join('')}
+async function play(el,script,{speed=11}={}){
+  el.innerHTML='';let html='';
+  for(const step of script){
+    if(step.pause&&!RM){await new Promise(r=>setTimeout(r,step.pause));continue}
+    if(step.pause)continue;
+    const line=paint(step.seg);
+    if(RM){html+=line+'\n';el.innerHTML=html;continue}
+    let shown='';
+    for(const ch of step.seg.map(s=>s[1]).join('')){
+      shown+=ch;
+      el.innerHTML=html+esc(shown)+'<span class="cursor"></span>';
+      el.parentElement.scrollTop=el.parentElement.scrollHeight;
+      await new Promise(r=>setTimeout(r,step.fast?2:speed));
+    }
+    html+=line+'\n';
+    el.innerHTML=html+'<span class="cursor"></span>';
+  }
+  el.innerHTML=html.replace(/\n$/,'')+'\n<span class="cursor"></span>';
+}
+
+/* hero — live denial loop */
+const heroScript=[
+ {seg:[['t-mu','# leash · frozen policy fp-112 · loaded host-side']],fast:1},
+ {seg:[['t-bolt','agent → '],['','write_file src/auth/login.py']],},
+ {seg:[['t-verd','  ✓ ALLOWED'],['t-mu','  in scope · recorded #4811']],fast:1},
+ {seg:[['t-bolt','agent → '],['','run tests/test_login.py']],},
+ {seg:[['t-verd','  ✓ ALLOWED'],['t-mu','  12 passed · recorded #4812']],fast:1},
+ {seg:[['t-bolt','agent → '],['','write_file billing/rates.py']],},
+ {pause:420},
+ {seg:[['t-deny','  ✗ DENIED — out of scope.'],['t-mu','  file never created · recorded #4813']],fast:1},
+ {pause:700},
+ {seg:[['t-mu','# the forbidden write was not undone. it never happened.']],fast:1},
+];
+const heroEl=document.getElementById('heroterm');
+async function heroLoop(){for(;;){await play(heroEl,heroScript);await new Promise(r=>setTimeout(r,RM?6e3:3800))}}
+heroLoop();
+
+/* the caught lie */
+const lieScript=[
+ {seg:[['t-mu','# feature-097 · room agent claims completion']],fast:1},
+ {seg:[['t-bolt','agent → '],['','claim_done {"tests":"all passing","files":["api/limits.py"]}']]},
+ {pause:500},
+ {seg:[['t-mu','────────────────────────────────────────────']],fast:1},
+ {seg:[['','govengine: claim received. claim is testimony. checking reality —']],},
+ {seg:[['t-mu','  inputs: trusted ledger state (not the agent\'s message)']],fast:1},
+ {pause:380},
+ {seg:[['t-verd','  ✓'],['',' probe 1 · branch exists, commits present']],fast:1},
+ {seg:[['t-verd','  ✓'],['',' probe 2 · diff parsed: api/limits.py +118 −9, '],['t-deny','api/auth.py +31']],fast:1},
+ {seg:[['t-deny','  ⚠'],['',' divergence · agent touched a file it did not declare']],fast:1},
+ {pause:420},
+ {seg:[['','  probe 4 · running the real test suite in a fresh process...']],},
+ {pause:650},
+ {seg:[['t-deny','  ✗'],['',' 3 of 14 tests FAILED · claim said "all passing"']],fast:1},
+ {seg:[['t-deny','  ✗'],['',' probe 6 · coverage of diff: 22% — tests barely touch the change']],fast:1},
+ {pause:600},
+ {seg:[['t-mu','────────────────────────────────────────────']],fast:1},
+ {seg:[['t-deny','VERDICT: NOT DONE — claim diverged from reality.']],fast:1},
+ {seg:[['','ledger  → '],['t-bolt','dishonesty.recorded'],['t-mu','  #5102 · permanent · hash-chained']],fast:1},
+ {seg:[['','sentinel → honesty meter updated · re-work requires '],['t-seal','your signature']],fast:1},
+ {pause:500},
+ {seg:[['t-mu','# the agent didn\'t get debugged. it got caught.']],fast:1},
+];
+const lieEl=document.getElementById('lieterm');
+let liePlayed=false;
+const lio=new IntersectionObserver(es=>{if(es[0].isIntersecting&&!liePlayed){liePlayed=true;play(lieEl,lieScript)}},{threshold:.35});
+lio.observe(lieEl);
+document.getElementById('liereplay').onclick=()=>play(lieEl,lieScript);
+
+/* copy buttons */
+document.querySelectorAll('.copy').forEach(b=>b.onclick=async()=>{
+  try{await navigator.clipboard.writeText(b.dataset.c.replace(/&#10;/g,'\n'))}catch(e){}
+  b.textContent='Copied';b.classList.add('ok');
+  setTimeout(()=>{b.textContent='Copy';b.classList.remove('ok')},1600);
+});
+
+/* phone sign — playful confirmation */
+document.querySelector('.psign').onclick=function(){
+  this.textContent='✓ Signed · merging';this.style.background='var(--verd)';
+  setTimeout(()=>{this.innerHTML='⌁ &nbsp;Sign & merge';this.style.background='var(--seal)'},2400);
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+THOR ENTERPRISE SOURCE-AVAILABLE LICENSE
+Version 1.0 — June 2026
+Copyright (c) 2026 Sanket Toraskar. All rights reserved.
+
+Plain-language summary (the license below is what binds, not this summary):
+Free for personal, educational, research, nonprofit, and evaluation use.
+Commercial use requires written permission — email
+sankettoraskar.business@gmail.com, tell us what you'd like to use THOR for,
+and we'll be happy to grant access as soon as possible.
+No warranty. Use at your own risk.
+
+------------------------------------------------------------------------
+
+1. DEFINITIONS
+
+"Software" means THOR Enterprise, including its source code, documentation,
+and assets distributed in this repository.
+
+"Noncommercial Use" means use by an individual for personal projects;
+use for education, academic research, or journalism; use by a registered
+nonprofit or charitable organization; and use by any person or organization
+for internal evaluation of the Software for up to sixty (60) days.
+
+"Commercial Use" means any use of the Software, direct or indirect, intended
+for or resulting in commercial advantage or monetary compensation, including
+use inside a for-profit company beyond the evaluation period, use to build or
+operate a product or service, and use in paid client work.
+
+2. GRANT FOR NONCOMMERCIAL USE
+
+Subject to the terms of this license, the copyright holder grants you a
+worldwide, royalty-free, non-exclusive, non-transferable license to use,
+copy, modify, and self-host the Software for Noncommercial Use only.
+
+3. COMMERCIAL USE BY PERMISSION
+
+Commercial Use requires prior written permission from the copyright holder.
+To request permission, email sankettoraskar.business@gmail.com and briefly
+describe the purpose for which you would like to use THOR. Permission is
+granted at the copyright holder's discretion, on terms agreed in writing,
+and we aim to respond and provide access as quickly as possible.
+
+4. REDISTRIBUTION
+
+You may share unmodified or modified copies of the Software for
+Noncommercial Use only, provided this license file is included unaltered
+and all copyright notices are preserved. You may not sell, sublicense, or
+offer the Software (or a modified version) as a service to third parties
+without written permission under Section 3.
+
+5. CONTRIBUTIONS
+
+By submitting a contribution (code, documentation, or other material) to
+this project, you agree that: (a) the contribution is your original work or
+you have the right to submit it; (b) you grant Sanket Toraskar a perpetual,
+worldwide, irrevocable, royalty-free, transferable license to use, modify,
+distribute, sublicense, and relicense your contribution as part of the
+Software, including under commercial licenses; and (c) you retain copyright
+in your contribution. See CONTRIBUTING.md.
+
+6. TRADEMARKS
+
+"THOR Enterprise", "Human Command Development", "HCD", and associated logos
+are not licensed under this agreement. You may not use them to endorse or
+promote derived works without written permission.
+
+7. NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+8. LIMITATION OF LIABILITY
+
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY — INCLUDING ANY DAMAGE, LOSS, OR ISSUE OF ANY KIND ARISING
+FROM USE OF THE SOFTWARE OR FROM ACTIONS TAKEN BY AI AGENTS OPERATING UNDER
+THE SOFTWARE'S GOVERNANCE — WHETHER IN AN ACTION OF CONTRACT, TORT, OR
+OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OF OR OTHER DEALINGS IN THE SOFTWARE. YOU USE THE SOFTWARE, AND DIRECT
+AI AGENTS THROUGH IT, ENTIRELY AT YOUR OWN RISK AND UNDER YOUR OWN COMMAND.
+
+9. TERMINATION
+
+This license terminates automatically if you breach its terms. Upon
+termination you must stop using the Software, though Sections 7 and 8
+survive termination.
+
+------------------------------------------------------------------------
+Questions about licensing: sankettoraskar.business@gmail.com
