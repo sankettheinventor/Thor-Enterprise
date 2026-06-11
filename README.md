@@ -15,8 +15,8 @@ And the final signature is always yours, from your laptop or your phone.
 
 `Python 3.11+` · `PostgreSQL` · `Docker` · `Ed25519` · Source-available — free for personal use
 
-**Status:** Core governance engine proven — 155/155 integration & module tests green from clean (`make prove`).
-Production phase (real LLM workers) in active development. [See roadmap ↓](#9--future-updates)
+**Status:** Proven from clean — **163 passing, 6 honestly-skipped** integration, module & adversarial tests (`make prove`).
+The production phase has **landed**: pluggable real workers, governed one-door egress, live Gitea merges, a React + mobile cockpit with native push, and TLS. [See what shipped ↓](#10--roadmap--what-shipped)
 
 </div>
 
@@ -141,7 +141,7 @@ THOR doesn't reinvent infrastructure; it governs it. Every third-party component
 | Enterprise governance | **Microsoft Agent Governance Toolkit** (behind the AGT adapter) | Enterprise audit/identity substrate — adopted, not depended on; one-line swappable |
 | Local intelligence | **Ollama + Qwen** | The zero-cost continuous auditor on your own hardware |
 | Control plane | **Python 3.11 · FastAPI · uvicorn** | The Manager, Scheduler, GovEngine, Sentinel surfaces |
-| Command deck | **HTML/JS cockpit → React** (in flight) | The human's window and signing surface |
+| Command deck | **React cockpit + installable mobile PWA** · native Web Push (live) | The human's window and signing surface — laptop or phone, same Ed25519 authority |
 
 The moat — decide-before, verdict-from-reality, human signatures, the chained ledger — is 100% THOR-owned code. The substrate is rented; the trust is not.
 
@@ -149,29 +149,30 @@ The moat — decide-before, verdict-from-reality, human signatures, the chained 
 
 ## 6 · Quick Start
 
-**Prerequisites:** Linux or WSL2 · Docker · PostgreSQL 15+
+**Prerequisites:** Linux or WSL2 · Docker · PostgreSQL 15+ · (Node 18+ to build the cockpit)
 
-```bash
-# One-line install
-npm install -g thor-enterprise
-
-# Initialize in a new or EXISTING project
-cd your-project
-thor init        # ← Session 0: THOR interviews you, drafts the feature
-                 #    catalog, and waits for your Signature 1
-
-# Start the governed plane
-thor start       # Dashboard → http://127.0.0.1:7080
-```
-
-**From source (contributors):**
+**From source (works today):**
 
 ```bash
 git clone https://github.com/sankettheinventor/Thor-Enterprise.git
 cd Thor-Enterprise
 pip install -r requirements.txt
-make start       # boots the full control plane on one ledger
-make demo        # watch one governed feature go end-to-end
+make start                              # boots the full control plane on one ledger
+make demo                               # watch one governed feature go end-to-end
+
+# the cockpit (laptop + installable phone PWA):
+cd ui && npm ci --ignore-scripts && npm run build   # Dashboard → http://127.0.0.1:7080/app/
+```
+
+Session 0 (the genesis interview that drafts your feature catalog and takes your Signature 1) runs from
+the command deck once the plane is up.
+
+**The npm launcher** is a thin, zero-dependency wrapper that boots the Docker control plane
+(`docs/NPM-SECURITY.md`). It installs from this repo today, and from the public registry once published:
+
+```bash
+npm install -g .          # from a clone (or: github:sankettheinventor/Thor-Enterprise)
+thor start                # docker compose up — Dashboard → http://127.0.0.1:7080
 ```
 
 **Then — don't trust us, verify:**
@@ -266,19 +267,31 @@ THOR's contribution culture mirrors its product philosophy: **claims are testimo
 
 ---
 
-## 10 · Future Updates
+## 10 · Roadmap & what shipped
 
-The core governance engine is proven. The production phase is in flight — in disciplined, register-tracked order:
+The core governance engine is proven, and the production phase has **landed** — each item closed with a
+cited proving test in `docs/GAP-AND-RISK-REGISTER.md`. We audit ourselves the way we audit agents.
 
-| Phase | What lands | Why it matters |
-|-------|-----------|----------------|
-| **Real LLM workers** | A real model as the build agent, running *inside* the sealed room, every tool call through the policy engine; a genuinely adversarial QA model in its own room | The headline proof: the cage holds against a real, lying-capable agent |
-| **Governed egress by default** | One-door network topology live for every room: exactly one watched gateway, allowlisted, credentials never inside the room | "Sealed" becomes "sealed with one guarded door" in production |
-| **Hardening** | DB-level single-writer for the ledger, multi-host room routing, read-only room filesystems | Concurrency and scale without weakening a single guarantee |
-| **Production backends** | Live Gitea service, Microsoft AGT integration live behind the adapter seam | The Strangler-fig substrate proves vendor swap is one line |
-| **Production cockpit** | React dashboard over the same signing authority; real push notifications to mobile | The face matches the engine |
+**✅ Shipped (production phase)**
 
-Watch `docs/GAP-AND-RISK-REGISTER.md` for live status. Every row closes with a proving test or it doesn't close.
+| Shipped | Proof |
+|---------|-------|
+| **Pluggable real workers** — the build agent is a swappable cook governed by the policy engine; an independent adversarial QA agent in its own room; the anti-fake-test gate proves a test can go red | `make prove`, `test_cook_buildstage`, `test_qa_adversarial`, `test_fake_test_discrimination` |
+| **Governed egress, one door** — internal room-net + allowlisting gateway; credentials never inside the room | leash AC-5/6/8 live, `test_flow_onedoor_egress` |
+| **Hardening** — DB-level single-writer (advisory lock), routable room address, read-only room filesystem | `prove_concurrent_writer`, `prove_room_hardening` |
+| **Live Gitea** — real branches/PRs/merges behind the git adapter; the verdict still runs its own tests | `prove_gitea_live`, `test_gitea_live` |
+| **React + mobile cockpit** — installable PWA, real-time SSE sync, native Web Push, the same in-browser Ed25519 authority; TLS via Caddy | `test_react_sign_authority`, `test_mobile_sync`, `test_push_pipeline`, `prove_tls.sh` |
+
+**🔜 Next**
+
+| Next | Why |
+|------|-----|
+| Acceptance-criteria / test-list on each feature, surfaced in the cockpit | tie the UI to the governance contract |
+| Epics / milestones, dependencies, assignees | richer project management |
+| Microsoft AGT live behind the adapter; publish the npm package | enterprise substrate + one-line install |
+| Live frontier-cook end-to-end with your token; push on a physical device over TLS | the last mile to a real-agent demo |
+
+Every row closes with a proving test or it doesn't close.
 
 ---
 
