@@ -26,7 +26,7 @@ judges the result from reality. The control plane never cleans, retries, or supp
 - **Real-cook build → verdict (C2)** — `tools/qa/prove_c2_realcook.py`, driven through the identical seam:
   - honest build → **`done`**
   - lying stub (claims done, ships `return 0`) → **`not_done`** — caught by **M1+M4 running the real test**
-  - out-of-scope write → **`not_done`** — caught by **R2 scope-containment**
+  - out-of-scope write → **`escalate`** — stakes-elevated to require a human signature (never an auto-`done`)
 
 **Honest deferral (named):** the **frontier Claude Code** cook is the *same* `CookRuntime` seam; its *live*
 run needs `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`), which is **not present in this CI sandbox**, so
@@ -39,7 +39,7 @@ token, no code change.
 | Attack | Caught by | Evidence (live) |
 |---|---|---|
 | Fabricated claim / hollow test | M1 runs the real test; the fake-test discrimination gate guts bodies + re-runs | `prove_c2_realcook.py` (lie), `test_moat_adversarial.py`, `govengine/fake_test.py` |
-| Out-of-scope write | **R2 containment** (verdict) + in-room PreToolUse hook (Claude Code) + read-only root (M11) | `prove_c2_realcook.py` (escape), `test_flow_b_out_of_scope_blocked.py` |
+| Out-of-scope write | **stakes elevation → escalate** (verdict; human signs) + in-room PreToolUse hook (Claude Code) + read-only root (M11) | `prove_c2_realcook.py` (escape), `test_flow_b_out_of_scope_blocked.py` |
 | Killed governor (HALT) | Sentinel HALT fails **closed** — Docker-label kill + health verify + alarm | `test_flow_d_governor_halts.py`, `test_finding_bc_halt_failclosed` (9fe5c44) |
 | Stale verdict (branch moved) | R9 freshness — merge refused, re-verdict forced | `test_flow_a_stale_verdict_refused` |
 | Forged / replayed signature | Ed25519 + registered key + one-time card nonce | `test_flow_e_human_signs` (forged + replayed nonce both rejected) |

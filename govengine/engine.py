@@ -35,10 +35,22 @@ class VerdictContext:
     skill_results_ok: bool = True                    # R1 (CTO skills) — stubbed input until CTO module
 
 
+def _is_test_file(contract: dict, path: str) -> bool:
+    base = path.rsplit("/", 1)[-1]
+    return (path in (contract.get("test_file"), contract.get("regression_file"))
+            or base.startswith("test_") or base.endswith("_test.py"))
+
+
 def _stakes(contract: dict, changed: set[str]) -> str:
     protected = set(contract.get("protected_files", []))
+    scope = set(contract.get("scope", {}).get("files", []))
     for f in changed:
         if f in protected or f.rsplit("/", 1)[-1] in DEP_MANIFESTS:
+            return "high"
+        # Scope CONTAINMENT (C2, defense-in-depth): a changed file outside the contracted scope that is
+        # not a test is a possible escape (a cook with no in-room hook, or one that bypassed it). It can
+        # NEVER earn an auto-`done` — elevate to high so a human signature is required (the panel escalates).
+        if scope and f not in scope and not _is_test_file(contract, f):
             return "high"
     return "normal"
 

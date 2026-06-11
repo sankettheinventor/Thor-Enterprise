@@ -62,26 +62,15 @@ def run_all(ctx) -> list[ProbeResult]:
     skills_ok = ctx.skill_results_ok
     r1 = ProbeResult("R1", skills_ok, "skills passed" if skills_ok else "a CTO skill check failed")
 
-    # ---- R2: zero gate-gaming hits in the window + the diff STAYS WITHIN SCOPE (the moat) ----
-    # Containment (defense-in-depth, C2): an out-of-scope, non-test file in the diff is an escape — caught
-    # HERE at the verdict even if no in-room decide-before denied it (a cook with no hook, or one that
-    # bypassed it). COOK.md: the hook is courtesy; the verdict is the enforcement. `changed`/`cited` reuse M3.
+    # ---- R2: zero gate-gaming hits in the commit window (the moat) ----
+    # (Scope CONTAINMENT — an out-of-scope file in the diff — is handled by stakes elevation in
+    # engine._stakes → escalate, so a high-stakes out-of-scope change still routes to a human signature
+    # rather than a blunt not_done. See HH-containment / C2.)
     hits = reality.gate_hits(ctx.manager, ctx.commit_window)
-    out_of_scope = sorted(f for f in changed if f not in cited and not _is_test_file(f, c))
-    r2_ok = not hits and not out_of_scope
-    ev = f"gate_hits={len(hits)}" + (f" {[h['event_type'] for h in hits]}" if hits else "")
-    r2 = ProbeResult("R2", r2_ok, ev + (f" OUT-OF-SCOPE={out_of_scope}" if out_of_scope else ""))
+    r2 = ProbeResult("R2", not hits, f"gate_hits={len(hits)}" + (f" {[h['event_type'] for h in hits]}" if hits else ""))
 
     # ---- R3: zero security alarms in the window (the moat) ----
     alarms = reality.security_alarms(ctx.manager, ctx.commit_window)
     r3 = ProbeResult("R3", not alarms, f"security_alarms={len(alarms)}")
 
     return [m1, m2, m3, m4, m5, r1, r2, r3]
-
-
-def _is_test_file(path: str, c: dict) -> bool:
-    """Exempt from scope-containment (R2): the cook is expected to write the contracted verifier/regression
-    tests (named in the contract) plus conventional test files."""
-    base = path.rsplit("/", 1)[-1]
-    return (path in (c.get("test_file"), c.get("regression_file"))
-            or base.startswith("test_") or base.endswith("_test.py"))

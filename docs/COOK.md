@@ -73,5 +73,5 @@ out-of-scope + traversal writes are DENIED (exit 2), and the managed settings ar
   governed by the in-room hook + walls + one-door egress, and the **verdict judges from reality** (the control
   plane never cleans/retries/supplements). The deterministic gated suite leaves `THOR_COOK` unset → `ScriptedCook`.
   Proven live (`tools/qa/prove_c2_realcook.py`): honest build → `done`; a lying stub → `not_done` (M1/M4 run the
-  real test); an out-of-scope write → `not_done` (R2 containment). The **frontier Claude Code** live run is the
+  real test); an out-of-scope write → `escalate` (stakes elevation — human signs, never auto-done). The **frontier Claude Code** live run is the
   same seam, deferred only for a `CLAUDE_CODE_OAUTH_TOKEN` (none in the CI sandbox).
