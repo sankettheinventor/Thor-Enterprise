@@ -68,6 +68,25 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
 
+  # TLS reverse proxy — REQUIRED for mobile push (Web Push needs HTTPS). Set THOR_SITE_ADDRESS in .env
+  # (a domain → auto Let's Encrypt; an IP/localhost → Caddy's internal CA). See Caddyfile + RUNBOOK.
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - controlplane
+    ports:
+      - "443:443"
+      - "80:80"
+    environment:
+      THOR_SITE_ADDRESS: ${THOR_SITE_ADDRESS:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data       # persists the issued certs + Caddy's internal root CA
+      - caddy_config:/config
+    restart: unless-stopped
+
 volumes:
   thor_pgdata:
   thor_gitea:
+  caddy_data:
+  caddy_config:

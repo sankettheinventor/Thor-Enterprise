@@ -23,6 +23,34 @@ docker compose -f docker-compose.prod.yml up -d --build
 ```
 Dashboard → `http://127.0.0.1:7080/`. Mutating calls require `Authorization: Bearer $THOR_API_TOKEN`.
 
+## HTTPS for mobile push (required)
+Web Push only works in a **secure context (HTTPS)**. The compose stack includes a **Caddy** TLS reverse
+proxy (`Caddyfile`) that fronts the control plane on `:443`. Pick a mode with `THOR_SITE_ADDRESS` in `.env`:
+
+| Mode | `THOR_SITE_ADDRESS` | Cert | Phone setup |
+|---|---|---|---|
+| **Production (a domain)** | `cockpit.yourco.com` | **Auto Let's Encrypt** (renewed) | nothing — publicly trusted |
+| **LAN / IP (no domain)** | `https://192.168.1.50` | Caddy **internal CA** | install Caddy's root CA once (below) |
+| **Local dev** | `localhost` | Caddy internal CA | desktop only |
+
+```bash
+echo "THOR_SITE_ADDRESS=cockpit.yourco.com" >> .env   # or https://<your-lan-ip>
+thor up                                               # Caddy now serves https://<that address>/app/
+```
+**LAN — trust the internal CA on the phone** (one time, so the cert is green + push works):
+```bash
+# export Caddy's root CA from the running container, then AirDrop/email it to the phone and install+trust it:
+docker compose -f docker-compose.prod.yml cp caddy:/data/caddy/pki/authorities/local/root.crt ./thor-root-ca.crt
+# iOS: Settings → General → VPN & Device Management → install → Settings → General → About →
+#      Certificate Trust Settings → enable. Android: Settings → Security → Install a certificate → CA.
+```
+For pure local dev on a laptop, [`mkcert`](https://github.com/FiloSottile/mkcert) is an easy alternative
+(it installs a locally-trusted CA; point Caddy at the generated cert or just use `localhost`).
+
+**Kubernetes:** terminate TLS at an Ingress with `cert-manager` (Let's Encrypt `ClusterIssuer`) routing to
+the `dashboard` Service on `:7080` — same effect as Caddy. The `/stream` route must disable proxy buffering
+(e.g. nginx-ingress: `nginx.org/proxy-buffering: "false"`).
+
 ## The end-to-end flow (what an operator does)
 1. **Assign** a feature (cockpit *Direct* tab, or `POST /task`). The CTO plans the room's frozen scope.
 2. **Build** — the worker (pluggable: Claude Code / any agent, `THOR_COOK`) builds INSIDE a sealed

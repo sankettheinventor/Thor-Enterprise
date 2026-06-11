@@ -1,0 +1,31 @@
+# THOR Enterprise — TLS reverse proxy. Mobile push (Web Push) REQUIRES HTTPS: a service worker + push
+# subscription only work in a secure context. Caddy terminates TLS and proxies to the control plane.
+#
+# Choose your mode with THOR_SITE_ADDRESS in .env (default: localhost):
+#   • Real domain (production) — automatic HTTPS via Let's Encrypt, auto-renewed:
+#         THOR_SITE_ADDRESS=cockpit.yourcompany.com
+#   • LAN / IP (no public domain) — Caddy's INTERNAL CA issues the cert; install Caddy's root CA on the
+#     phone once to trust it (see RUNBOOK → "HTTPS for push"):
+#         THOR_SITE_ADDRESS=https://192.168.1.50
+#   • Local dev — trusted localhost cert from Caddy's internal CA:
+#         THOR_SITE_ADDRESS=localhost
+#
+{$THOR_SITE_ADDRESS:localhost} {
+	encode gzip
+
+	# Reverse-proxy everything to the control plane's DashboardAPI (:7080). The cockpit, the API, the
+	# Web Push endpoints, and the SSE stream all live here.
+	reverse_proxy controlplane:7080 {
+		# Stream Server-Sent Events (/stream) with NO buffering, so the phone re-syncs in real time and
+		# the open stream is never held/closed by the proxy.
+		flush_interval -1
+	}
+
+	# Security headers (defence-in-depth for the most-exposed surface).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}
