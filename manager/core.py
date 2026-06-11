@@ -249,6 +249,10 @@ class ThorManager:
         self._record("feature.priority", {"feature_id": feature_id, "priority": int(priority)},
                      feature_id=feature_id)
 
+    def remove_feature(self, feature_id: str) -> None:
+        """Remove a feature from the catalog (event-sourced — the ledger keeps the full history)."""
+        self._record("feature.removed", {"feature_id": feature_id}, feature_id=feature_id)
+
     def list_features(self) -> list[dict]:
         with self.conn.cursor() as cur:
             cur.execute("SELECT feature_id,title,priority,status,est_tokens FROM features "
@@ -300,6 +304,8 @@ class ThorManager:
             elif event_type == "feature.priority":
                 cur.execute("UPDATE features SET priority=%s WHERE feature_id=%s",
                             (p["priority"], p["feature_id"]))
+            elif event_type == "feature.removed":
+                cur.execute("DELETE FROM features WHERE feature_id=%s", (p["feature_id"],))
         self.conn.commit()
 
     def rebuild_from_log(self) -> None:

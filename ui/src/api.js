@@ -16,3 +16,8 @@ export async function post(path, body) {
   })
   return r.json()
 }
+
+export async function del(path) {
+  const r = await fetch(base + path, { method: 'DELETE' })
+  return r.json()
+}

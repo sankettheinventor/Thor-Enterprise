@@ -146,6 +146,13 @@ def add_feature(f: FeatureIn, _: None = Depends(require_token)):
     return {"feature_id": _service.add_feature(f.title, f.context, f.priority)}
 
 
+@app.delete("/features/{feature_id}")
+def remove_feature(feature_id: str, _: None = Depends(require_token)):
+    """Remove a feature from the catalog (event-sourced; the ledger keeps the history)."""
+    _service.manager.remove_feature(feature_id)
+    return {"ok": True, "removed": feature_id}
+
+
 @app.post("/operator/register")
 def register_operator(k: OperatorKey, _: None = Depends(require_token)):
     """Register an authorized signer (the CEO's operator key) — only registered keys may sign."""
