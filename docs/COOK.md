@@ -60,10 +60,13 @@ That's it. THOR provides the walls; the agent does the building; the verdict jud
 `test_cook_agent` (in-process governance seam); in the built room image Claude Code 2.1.170 is present,
 out-of-scope + traversal writes are DENIED (exit 2), and the managed settings are tamper-proof to the cook.
 
-## Live end-to-end — the named remaining work
-- **One-door egress** (`wall/network_enforcer.one_door_room_kwargs`, currently `NotImplementedError`):
-  allowlist HTTPS egress to the chosen agent's model hosts (for Claude Code: `api.anthropic.com`,
-  `claude.ai`, `platform.claude.com`, `downloads.claude.ai`, `raw.githubusercontent.com`).
-- **Manager cook-runner:** provision a room with `runtime.image()`, run `runtime.command(slice)` with
-  `runtime.env()`, collect `claim_done`. (The runtime *description* is built + tested; the runner is the
-  live integration that needs the egress above.)
+## Live end-to-end
+- **One-door egress (LIVE, C1):** `cook/runner.run()` AUTO-SELECTS the network mode from the cook's
+  `egress_allowlist()` — a cook that declares model/auth hosts (Claude Code → `api.anthropic.com`, …) gets
+  a real `one_door` room with the governed gateway started as its ONLY forwarder, allowlisting exactly
+  those hosts and denying all else; a cook with no allowlist runs fully `sealed`. The cook carries its OWN
+  credential in its env (above); THOR injects no model-host secret. Proven live: `tools/qa/prove_cook_onedoor.py`
+  (allowlisted host → 200, every other host → BLOCKED, no secret in the room env).
+- **Cook-runner:** `CookRunner.run()` provisions the room with `runtime.image()` + `runtime.env()`, runs
+  `runtime.command(slice)` as the unprivileged cook, returns `{room_id, exit_code, network_mode, output}`.
+  (C2 — wiring this runner into `BuildStage` as the default for a real `THOR_COOK` runtime — is the next step.)
