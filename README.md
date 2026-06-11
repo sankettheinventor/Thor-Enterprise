@@ -175,16 +175,7 @@ npm install -g .          # from a clone (or: github:sankettheinventor/Thor-Ente
 thor start                # docker compose up — Dashboard → http://127.0.0.1:7080
 ```
 
-**Then — don't trust us, verify:**
-
-```bash
-make prove
-```
-
-`make prove` is the trust bar: it provisions real rooms, attempts real violations — fabricated claims, hollow tests, out-of-scope writes, a killed governor — and passes only if **every attack is caught**. If you change the code and the moat weakens, this command tells you before your agents do.
-
-<!-- ▶️ DEMO GIF — `make demo` end-to-end -->
-![make demo](docs/assets/thor-demo.gif)
+**Then — don't trust us, verify.** THOR ships an adversarial proof suite that provisions real rooms and attempts real violations — fabricated claims, hollow tests, out-of-scope writes, a killed governor — and passes only if **every attack is caught**. If a change weakens the moat, the suite fails before your agents do.
 
 ---
 
@@ -260,7 +251,7 @@ THOR's contribution culture mirrors its product philosophy: **claims are testimo
 
 1. **Read the actual code first.** Documentation drifts; source doesn't.
 2. **One gap per PR.** Name the gap (register row or issue) in the commit. No drive-by refactors of working modules.
-3. **Prove over the live plane.** A green unit test is testimony. Your PR must keep `make prove` green from clean — real rooms, real Postgres, real attacks.
+3. **Prove over the live plane.** A green unit test is testimony. Your PR must keep the adversarial proof suite green from clean — real rooms, real Postgres, real attacks.
 4. **Never weaken the moat.** Any change that makes the policy engine more permissive, the verdict more forgiving, or the worker more trusted will be rejected regardless of what it improves. The moat gets harder, never easier.
 5. **Adversarial proof for boundary changes.** If your PR touches the worker, the policy engine, or the network boundary, it ships with the attack that fails against it.
 6. **Update the register.** Found a gap you're not fixing? Add the row with file:line. Honest open gaps outrank silent ones.
@@ -270,17 +261,17 @@ THOR's contribution culture mirrors its product philosophy: **claims are testimo
 ## 10 · Roadmap & what shipped
 
 The core governance engine is proven, and the production phase has **landed** — each item closed with a
-cited proving test in `docs/GAP-AND-RISK-REGISTER.md`. We audit ourselves the way we audit agents.
+cited adversarial test. We audit ourselves the way we audit agents.
 
 **✅ Shipped (production phase)**
 
-| Shipped | Proof |
-|---------|-------|
-| **Pluggable real workers** — the build agent is a swappable cook governed by the policy engine; an independent adversarial QA agent in its own room; the anti-fake-test gate proves a test can go red | `make prove`, `test_cook_buildstage`, `test_qa_adversarial`, `test_fake_test_discrimination` |
-| **Governed egress, one door** — internal room-net + allowlisting gateway; credentials never inside the room | leash AC-5/6/8 live, `test_flow_onedoor_egress` |
-| **Hardening** — DB-level single-writer (advisory lock), routable room address, read-only room filesystem | `prove_concurrent_writer`, `prove_room_hardening` |
-| **Live Gitea** — real branches/PRs/merges behind the git adapter; the verdict still runs its own tests | `prove_gitea_live`, `test_gitea_live` |
-| **React + mobile cockpit** — installable PWA, real-time SSE sync, native Web Push, the same in-browser Ed25519 authority; TLS via Caddy | `test_react_sign_authority`, `test_mobile_sync`, `test_push_pipeline`, `prove_tls.sh` |
+| Shipped |
+|---------|
+| **Pluggable real workers** — the build agent is a swappable cook governed by the policy engine; an independent adversarial QA agent in its own room; the anti-fake-test gate proves a test can go red |
+| **Governed egress, one door** — internal room-net + allowlisting gateway; credentials never inside the room |
+| **Hardening** — DB-level single-writer (advisory lock), routable room address, read-only room filesystem |
+| **Live Gitea** — real branches/PRs/merges behind the git adapter; the verdict still runs its own tests |
+| **React + mobile cockpit** — installable PWA, real-time SSE sync, native Web Push, the same in-browser Ed25519 authority; TLS via Caddy |
 
 **🔜 Next**
 
@@ -297,7 +288,7 @@ Every row closes with a proving test or it doesn't close.
 
 ## 11 · Author
 
-**Sanket** — Founder, THOR Enterprise · Mumbai, India
+**Sanket Toraskar** — Founder, THOR Enterprise
 
 Creator of **Human Command Development (HCD)** — the philosophy that every human who directs AI is a Commander carrying full accountability: wisdom from human experience, speed from AI execution, and command never delegated to the thing being commanded.
 
@@ -313,7 +304,5 @@ THOR is dogfooded daily: it governs the AI agents that help build it. The kill c
 <div align="center">
 
 **The agent proposes. The guard disposes. Reality decides. You sign.**
-
-⭐ If you believe humans should command AI — not chase it with a mop — star this repo.
 
 </div>

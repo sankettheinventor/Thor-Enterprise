@@ -17,7 +17,7 @@ maintainer included.
 2. **One gap per PR.** Name the gap (a Gap Register row or an issue number) in the
    commit message. No drive-by refactors of working modules.
 3. **Prove over the live plane.** A green unit test is testimony. Your PR must keep
-   `make prove` green from clean — real rooms, real Postgres, real attacks.
+   the adversarial proof suite green from clean — real rooms, real Postgres, real attacks.
 4. **Never weaken the moat.** Any change that makes the policy engine more permissive,
    the verdict more forgiving, or the worker more trusted will be rejected regardless
    of what else it improves. The moat gets harder, never easier.
