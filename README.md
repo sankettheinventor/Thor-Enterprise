@@ -2,8 +2,6 @@
 
 ![THOR Enterprise](docs/assets/thor-banner.svg)
 
-# ⚡ THOR Enterprise
-
 ### **Governed development, in your pocket.**
 
 AI agents build your software in sealed rooms. Every action is judged **before** it executes.
@@ -15,14 +13,10 @@ And the final signature is always yours, from your laptop or your phone.
 ![License](https://img.shields.io/badge/license-Source--Available-C77DD6)
 ![Python](https://img.shields.io/badge/python-%E2%89%A53.11-3776AB?logo=python&logoColor=white)
 ![version](https://img.shields.io/badge/version-1.0.0-8E3BA6)
-![make prove](https://img.shields.io/badge/make%20prove-163%20passing-3fb950)
 ![npm](https://img.shields.io/badge/npm-thor--enterprise-CB3837?logo=npm&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-required-2496ED?logo=docker&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-ledger-336791?logo=postgresql&logoColor=white)
 ![dashboard](https://img.shields.io/badge/dashboard-127.0.0.1%3A7080-E8B23A)
-
-**Status:** Proven from clean — **163 passing, 6 honestly-skipped** integration, module & adversarial tests (`make prove`).
-The production phase has **landed**: pluggable real workers, governed one-door egress, live Gitea merges, a React + mobile cockpit with native push, and TLS. [See what shipped ↓](#10--roadmap--what-shipped)
 
 </div>
 
