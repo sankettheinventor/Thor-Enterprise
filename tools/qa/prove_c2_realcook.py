@@ -57,7 +57,9 @@ def run_case(name, calc, extra, expect):
 
     subprocess.run(["git", "init", "-q", repo])
     open(repo + "/README", "w").write("base\n")
-    g("add", "-A"); g("-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "-m", "base"); g("branch", "-M", "main")
+    g("add", "-A")
+    g("-c", "user.email=a@b", "-c", "user.name=a", "commit", "-q", "-m", "base")
+    g("branch", "-M", "main")
 
     fid = "C2" + name
     feature = {"feature_id": fid, "task_type": "build", "acceptance_criteria": ["works"],
