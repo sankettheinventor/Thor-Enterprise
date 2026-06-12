@@ -129,6 +129,9 @@ def test_ac6_no_credentials_inside_container():
     from leash import gateway
     from wall import provisioner
 
+    # Production keeps NO hardcoded secret (it comes from env); this test supplies its OWN non-empty test
+    # credential to verify the capability separation (cred in the gateway, never in the room).
+    gateway.UPSTREAM_CRED = "AC6-TEST-UPSTREAM-CRED-do-not-leak"
     cli, room = _one_door_room("ac6")
     try:
         room_env = cli.containers.get(room["room_id"]).exec_run(["env"], user="cook").output.decode()
