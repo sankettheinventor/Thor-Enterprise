@@ -76,7 +76,7 @@ That is the entire footprint — no THOR source change to onboard a new project.
 | **Frontier-model cook, LIVE** | Wiring/egress/verdict proven with a deterministic real cook; the *live* Claude Code run needs an OAuth token absent from the sandbox. | `C2-realcook` (deferral named) |
 | **Multi-commander / RBAC** | One operator key; no per-user roles, no team auth. Single-commander only. | — (scope) |
 | **Kubernetes room fleets** | Single-host Docker siblings only; k8s rooms deferred. Concurrency bounded by one host. | — (scope) |
-| **Non-Python coverage-of-diff** | The verdict's coverage-of-diff is `.py`-only; an HTML/JS/TS feature (e.g. this cockpit) has no coverage probe → risk of false `not_done` on honest web work. | `HH-nonpy-coverage` (open) |
+| **Non-Python mechanical verification** | The anti-hollow coverage-of-diff gate is `.py`-only. Now handled **fail-closed**: a non-Python feature ESCALATES for a human signature (it can't earn an auto-`done`), but THOR still can't *mechanically* verify JS/HTML/SQL work — a human must. | `HH-nonpy-coverage` (escalates) |
 | **Microsoft AGT backend** | The AGT **policy gate is real and consumed by the Leash**; AGT identity/health/compliance are **representative** stubs (no Azure creds). Real AGT plugs in behind the same Strangler seam at deploy (one-line construction change). | `L1`, `M9` (representative) |
 | **Turnkey hosted product** | Operator-run control plane (RUNBOOK), not a managed SaaS; no billing/tenancy. | — (scope) |
 
