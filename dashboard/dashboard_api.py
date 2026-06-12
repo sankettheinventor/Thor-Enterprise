@@ -40,6 +40,8 @@ class Sig(BaseModel):
 
 class OperatorKey(BaseModel):
     signer_pub: str
+    cosign: str | None = None   # Ed25519 sig over signer_pub by an existing operator (required post-bootstrap)
+    by_pub: str | None = None   # the existing operator's pubkey that produced `cosign`
 
 
 @app.get("/state/summary")
@@ -161,9 +163,18 @@ def stop_feature(feature_id: str, _: None = Depends(require_token)):
 
 @app.post("/operator/register")
 def register_operator(k: OperatorKey, _: None = Depends(require_token)):
-    """Register an authorized signer (the CEO's operator key) — only registered keys may sign."""
-    _service.manager.register_operator(k.signer_pub)
-    return {"registered": True}
+    """Register an authorized signer. The transport token alone must NOT mint signing authority
+    (AUD-register-authority): the FIRST operator is a token-gated trust-on-first-use bootstrap; every
+    operator after that must be CO-SIGNED by an existing operator (Ed25519 over the new key)."""
+    mgr = _service.manager
+    if k.signer_pub in mgr.authorized_signers:
+        return {"registered": True, "already": True}
+    if not mgr.authorized_signers:
+        mgr.register_operator(k.signer_pub)
+        return {"registered": True, "bootstrap": True}
+    if not (k.cosign and k.by_pub):
+        return {"registered": False, "reason": "operators exist — a new key must be co-signed by an existing operator"}
+    return mgr.register_operator_signed(k.signer_pub, k.cosign, k.by_pub)
 
 
 @app.get("/cards/{card_id}/challenge")

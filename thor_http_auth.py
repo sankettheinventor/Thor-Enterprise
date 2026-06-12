@@ -10,6 +10,7 @@ mutating surface at all.
 """
 from __future__ import annotations
 
+import hmac
 import os
 
 from fastapi import Header, HTTPException
@@ -25,7 +26,8 @@ def is_authorized(authorization: str | None) -> bool:
     expected = os.environ.get("THOR_API_TOKEN")
     if not expected:
         return True                       # no token configured → auth disabled (dev/test)
-    return authorization == f"Bearer {expected}"
+    # constant-time compare — never leak the token a byte at a time via response timing (AUD-token-timing)
+    return hmac.compare_digest(authorization or "", f"Bearer {expected}")
 
 
 def require_token(authorization: str | None = Header(default=None)) -> None:

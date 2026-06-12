@@ -135,6 +135,13 @@ def boot() -> list[tuple[object, int]]:
 
     # ---- 3) Room Mechanism — the Manager: the hands + the SOLE ledger writer (decides nothing) ----
     manager = ThorManager(conn)
+    # Operator signing keys come from out-of-band boot config (THOR_OPERATOR_PUBKEYS, comma-separated
+    # Ed25519 b64 keys) — NOT from a token-unlocked HTTP endpoint. With keys configured, only they may
+    # sign; a new key afterwards needs an existing operator's co-signature (AUD-register-authority).
+    for _pub in (p.strip() for p in os.environ.get("THOR_OPERATOR_PUBKEYS", "").split(",") if p.strip()):
+        manager.register_operator(_pub)
+    if manager.authorized_signers:
+        print(f"[thor] Identity  {len(manager.authorized_signers)} operator key(s) registered from boot config")
     # M1: crash-replay has a REAL caller now. On every boot the Manager rebuilds its projections
     # (rooms/cards/features) purely by replaying the durable signed EventLog — so a crash that lost
     # the projection tables (but kept the ledger) recovers to exact state. (FR-13 / AC-3.)

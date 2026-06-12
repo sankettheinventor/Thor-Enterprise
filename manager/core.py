@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 import uuid
 
@@ -56,13 +57,27 @@ class ThorManager:
 
     # ---- T7: human-signs authority — registered operator/device keys + one-time card nonces ----
     def register_operator(self, pub_b64: str) -> None:
-        """Register an authorized signer (the CEO's operator key, or a trusted mobile device key)."""
+        """Register an authorized signer. Use at BOOT (from THOR_OPERATOR_PUBKEYS) or to bootstrap the
+        FIRST operator. After one operator exists, a NEW key must be added via `register_operator_signed`
+        — a transport token alone must NOT mint signing authority (AUD-register-authority)."""
         self.authorized_signers.add(pub_b64)
 
+    def register_operator_signed(self, new_pub_b64: str, signature_b64: str, by_pub_b64: str) -> dict:
+        """Add a new operator key ONLY if an existing operator co-signed it (Ed25519 over the new key)."""
+        if not self.authorized_signers or by_pub_b64 not in self.authorized_signers:
+            return {"registered": False, "reason": "co-signer is not a registered operator"}
+        if not self.identity.verify_signature(by_pub_b64, new_pub_b64, signature_b64)["valid"]:
+            return {"registered": False, "reason": "invalid co-signature over the new key"}
+        self.authorized_signers.add(new_pub_b64)
+        self._record("operator.registered", {"new_pub": new_pub_b64, "by": by_pub_b64})
+        return {"registered": True}
+
     def is_authorized_signer(self, pub_b64: str) -> bool:
-        # Back-compat: with NO signer registered, accept any (raw-mechanism unit tests). In product the
-        # boot registers the operator key, so only registered keys can sign.
-        return not self.authorized_signers or pub_b64 in self.authorized_signers
+        if self.authorized_signers:
+            return pub_b64 in self.authorized_signers           # only registered keys may sign
+        # No operator registered: accept any ONLY in dev/test (no API token). PRODUCTION (token set) is
+        # fail-CLOSED — an unconfigured signer set must never accept an arbitrary key (AUD-register-authority).
+        return not os.environ.get("THOR_API_TOKEN")
 
     def issue_challenge(self, card_id: str) -> str:
         """Issue a one-time nonce bound to this card; a signature must carry it, and it is consumed on
