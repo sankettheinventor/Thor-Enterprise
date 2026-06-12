@@ -10,7 +10,9 @@ that is the transport-swappability proof (AC-5/AC-12): switching the adapter cha
 """
 from __future__ import annotations
 
+import base64
 import json
+import re
 from abc import ABC, abstractmethod
 
 
@@ -57,9 +59,13 @@ class DockerExecTransport(Transport):
         self.log: list[tuple[str, str, dict]] = []
 
     def deliver(self, direction, room_id, msg_type, payload) -> bool:
-        # Carry the message as a file into the room (proves it crossed the seam over docker-exec).
-        blob = json.dumps(payload).replace("'", "")
-        r = self.container.exec_run(["sh", "-c", f"printf '%s' '{blob}' > /tmp/msg_{msg_type}.json"])
+        # Carry the message as a file into the room. BASE64 the JSON so no shell metacharacter in the
+        # payload can break the quoting or corrupt the message (output encoding per context — invariant #8);
+        # sanitise msg_type to an allow-list; run as the unprivileged cook (least privilege).
+        b64 = base64.b64encode(json.dumps(payload).encode()).decode()
+        safe_type = re.sub(r"[^A-Za-z0-9_]", "", msg_type) or "msg"
+        r = self.container.exec_run(
+            ["sh", "-c", f"echo {b64} | base64 -d > /tmp/msg_{safe_type}.json"], user="cook")
         self.log.append((direction, msg_type, payload))
         return r.exit_code == 0
 

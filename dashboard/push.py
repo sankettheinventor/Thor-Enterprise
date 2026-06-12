@@ -57,7 +57,11 @@ def _save(subs: list[dict]) -> None:
 def _safe_endpoint(endpoint: str) -> bool:
     """SSRF guard: `/push/subscribe` is unauthenticated, so an attacker must NOT be able to register an
     endpoint that makes THOR POST to an internal service. Require HTTPS resolving to a PUBLIC IP
-    (AUD-push-ssrf). The push payload is end-to-end encrypted, but the request itself must not be SSRF."""
+    (AUD-push-ssrf). The push payload is end-to-end encrypted, but the request itself must not be SSRF.
+    Secure by default: a local mock receiver is allowed ONLY with the explicit THOR_PUSH_ALLOW_LOCAL opt-in
+    (dev/test), never in production."""
+    if os.environ.get("THOR_PUSH_ALLOW_LOCAL"):
+        return bool(endpoint)
     try:
         u = urlparse(endpoint or "")
     except ValueError:

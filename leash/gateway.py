@@ -18,7 +18,10 @@ from wall import config, network_enforcer
 
 GATEWAY_NAME = "thor-leash-gateway"
 UPSTREAM_NAME = "thor-upstream"
-UPSTREAM_CRED = "SECRET-MODEL-KEY-do-not-leak"
+# Secrets NEVER live in source (security invariant #1). The optional upstream credential comes from the
+# environment only — and the proxy no longer attaches it to any cook-named request (AUD-doget-cred), so it
+# is vestigial unless a deployment configures a real upstream that needs it.
+UPSTREAM_CRED = os.environ.get("LEASH_UPSTREAM_CRED", "")
 
 
 def _rm(client, name):

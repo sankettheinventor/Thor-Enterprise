@@ -47,6 +47,7 @@ def test_push_encrypts_and_delivers_to_device():
         assert len(push.public_key()) > 80, "VAPID application key looks wrong"
         priv = ec.generate_private_key(ec.SECP256R1())
         p256dh = b64urlencode(priv.public_key().public_bytes(Encoding.X962, PublicFormat.UncompressedPoint))
+        os.environ["THOR_PUSH_ALLOW_LOCAL"] = "1"   # this test points at a LOCAL mock receiver by design
         sub = {"endpoint": f"http://127.0.0.1:{port}/p",
                "keys": {"p256dh": p256dh, "auth": b64urlencode(os.urandom(16))}}
         assert push.subscribe(sub) == 1
