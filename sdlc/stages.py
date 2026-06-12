@@ -174,26 +174,47 @@ class BuildStage(Stage):
         from cook.runner import CookRunner
 
         _git(repo, "checkout", "-q", "-B", branch)
-        slice_ = {**{k: v for k, v in feature.items() if k != "code_files"},
-                  "feature_id": fid, "title": feature.get("title", fid),
+        # EXPLICIT slice fields only — never spread the whole feature dict, so operator-supplied context or
+        # any future field never reaches the untrusted cook's read-only /task mount (AUD-realcook-hygiene).
+        slice_ = {"feature_id": fid, "title": feature.get("title", fid),
+                  "acceptance_criteria": feature.get("acceptance_criteria", []),
                   "scope_files": list(plan["scope_files"]),
-                  "forbidden_patterns": list(plan["forbidden_patterns"])}
+                  "forbidden_patterns": list(plan["forbidden_patterns"]),
+                  "planned_test": feature.get("planned_test"),
+                  "regression_file": feature.get("regression_file")}
         runner = CookRunner()
         result = runner.run(slice_, worktree_host_path=repo)        # the agent builds in /work, in-room
         _git(repo, "add", "-A")
         _git(repo, "-c", "user.email=cook@thor", "-c", "user.name=cook", "commit", "-q",
              "-m", f"implement {feature.get('title', fid)} [{fid}]")
+        exit_code = result.get("exit_code")
+        # The branch is now on the host repo; the verdict reads git + runs tests on the HOST — it does not
+        # need the build room. Destroy it immediately so no cook container (holding the cook's OWN
+        # credential) leaks on a not_done/escalate/stop path (AUD-realcook-hygiene). The cook exit_code is
+        # recorded but never trusted — the verdict-from-reality is the only arbiter of done.
+        self._destroy_room(manager, result["room_id"], result.get("_mount_plan"))
         if manager is not None:
             try:
                 manager._record("cook.ran", {"feature_id": fid, "room_id": result["room_id"],
                                 "runtime": runner.runtime.name, "network_mode": result.get("network_mode"),
-                                "exit_code": result.get("exit_code")}, room_id=result["room_id"], feature_id=fid)
+                                "exit_code": exit_code}, room_id=result["room_id"], feature_id=fid)
             except Exception:  # noqa: BLE001 — audit best-effort; the verdict is the enforcement
                 pass
         return {"feature_id": fid, "branch": branch, "room_id": result["room_id"], "claim_done": True,
-                "_room": {"room_id": result["room_id"], "_mount_plan": result.get("_mount_plan")},
-                "decisions": {}, "runtime": runner.runtime.name,
+                "_room": {"room_id": result["room_id"], "_mount_plan": None},   # already destroyed above
+                "decisions": {}, "runtime": runner.runtime.name, "exit_code": exit_code,
                 "network_mode": result.get("network_mode"), "_cook_output": result.get("output")}
+
+    @staticmethod
+    def _destroy_room(manager, room_id: str, mount_plan) -> None:
+        try:
+            if manager is not None:
+                manager.destroy_room(room_id, mount_plan)
+            else:
+                from wall import provisioner
+                provisioner.destroy_room(room_id, mount_plan)
+        except Exception:  # noqa: BLE001 — best-effort teardown; never mask the build result
+            pass
 
     def edge_check(self, output: dict) -> tuple[bool, str]:
         ok = output.get("claim_done") and bool(output.get("branch"))

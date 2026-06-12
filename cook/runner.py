@@ -16,8 +16,15 @@ from __future__ import annotations
 
 import os
 import tempfile
+import threading
 
 from .runtime import CookRuntime, select_runtime
+
+# The one-door gateway is a process-global singleton (one name, one allowlist). Two cooks starting it
+# concurrently would swap the allowlist out from under each other (AUD-gateway-singleton). Serialize the
+# whole one-door build under this lock and tear the gateway down after, so each cook gets EXACTLY its
+# allowlist and no gateway leaks. (Single-host control plane → a process lock is sufficient.)
+_ONE_DOOR_LOCK = threading.Lock()
 
 
 class CookRunner:
@@ -40,9 +47,17 @@ class CookRunner:
         allowlist = self.runtime.egress_allowlist()
         if network_mode is None:
             network_mode = "one_door" if allowlist else "sealed"   # C1: a cook that needs its model gets one door
-        prov = self._prov or _provisioner()
         if network_mode == "one_door":
-            self._start_gateway(allowlist)   # the room's ONLY forwarder; fail-closed if it can't start
+            with _ONE_DOOR_LOCK:                 # AUD-gateway-singleton: one cook owns the gateway at a time
+                self._start_gateway(allowlist)
+                try:
+                    return self._provision_and_exec(feature_slice, worktree_host_path, network_mode)
+                finally:
+                    self._teardown_gateway()     # no leak, and the next cook starts fresh with ITS allowlist
+        return self._provision_and_exec(feature_slice, worktree_host_path, network_mode)
+
+    def _provision_and_exec(self, feature_slice: dict, worktree_host_path: str, network_mode: str) -> dict:
+        prov = self._prov or _provisioner()
         room = prov.provision_room(
             task_type="build", feature_slice=feature_slice, worktree_host_path=worktree_host_path,
             network_mode=network_mode, extra_env=self.runtime.env(), image=self.runtime.image())
@@ -61,6 +76,13 @@ class CookRunner:
         gateway.start_gateway(_docker(), leash_host_path=leash_host_path,
                               decision_log_dir=os.path.join(tempfile.gettempdir(), "thor-leash"),
                               allowlist=tuple(allowlist))
+
+    def _teardown_gateway(self) -> None:
+        try:
+            from leash import gateway
+            gateway.teardown(_docker())
+        except Exception:  # noqa: BLE001 — best-effort teardown; never mask the build result
+            pass
 
 
 def _provisioner():

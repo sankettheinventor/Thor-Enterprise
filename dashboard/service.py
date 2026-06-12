@@ -214,17 +214,22 @@ class DashboardService:
     def stop_feature(self, feature_id: str) -> dict:
         """Stop work on a task: destroy any active room for the feature (physical halt) and move it back
         to 'ready'. The branch + ledger are preserved; only the running container goes."""
-        stopped = []
+        # Halt EVERY live room for the feature, whatever its status string — a build room mid-exec may not
+        # read literally "working", and leaving it alive while the feature is re-scheduled would let a NEW
+        # cook run against the SAME worktree (git corruption) (AUD-stop-status). Only flip to 'ready' if
+        # the halt actually succeeded; otherwise surface that nothing was stopped (fail-loud, not silent).
+        stopped, failed = [], []
         for rid, r in self.manager.state_summary()["rooms"].items():
-            if r.get("feature_id") == feature_id and r.get("status") == "working":
+            if r.get("feature_id") == feature_id and r.get("status") != "destroyed":
                 try:
                     self.manager.destroy_room(rid)
-                except Exception:  # noqa: BLE001 — best-effort teardown; never crash the surface
-                    pass
-                stopped.append(rid)
-        self.manager.set_feature_status(feature_id, "ready")
-        self._action("stop", {"feature_id": feature_id, "rooms": stopped})
-        return {"ok": True, "stopped": stopped}
+                    stopped.append(rid)
+                except Exception:  # noqa: BLE001 — record the failure; do NOT re-schedule over a live room
+                    failed.append(rid)
+        if not failed:
+            self.manager.set_feature_status(feature_id, "ready")
+        self._action("stop", {"feature_id": feature_id, "rooms": stopped, "failed": failed})
+        return {"ok": not failed, "stopped": stopped, "failed": failed}
 
     def dry_run(self) -> dict:
         if self.scheduler_factory is None:
