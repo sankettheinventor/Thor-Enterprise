@@ -21,6 +21,8 @@ import subprocess
 import sys
 import uuid
 
+from . import reality
+
 
 def is_hollow(repo: str, test_relpath: str | None, contract: dict) -> tuple[bool, str]:
     """Return (hollow, reason). hollow=True means the test does NOT genuinely exercise the feature."""
@@ -84,9 +86,25 @@ def _gut_function_bodies(src: str) -> str:
         return src
 
 
+# Stdlib line tracer for the SEALED sandbox (the room image has no `coverage` module, and we must never
+# run cook code on the host). It prints the executed line numbers of the contracted source as THOR_COV:[...].
+_TRACER = (
+    "import sys, json, runpy\n"
+    "tgt, test, ex = sys.argv[1], sys.argv[2], set()\n"
+    "def _t(fr, ev, a):\n"
+    "    if ev == 'line' and fr.f_code.co_filename.endswith(tgt): ex.add(fr.f_lineno)\n"
+    "    return _t\n"
+    "sys.settrace(_t)\n"
+    "try: runpy.run_path(test, run_name='__main__')\n"
+    "except Exception: pass\n"
+    "finally: sys.settrace(None)\n"
+    "print('THOR_COV:' + json.dumps(sorted(ex)))\n"
+)
+
+
 def _discriminates(repo: str, test_relpath: str, cited: list[str]) -> tuple[bool, str]:
     """True iff the test FAILS when the feature's code is gutted (i.e. it genuinely tests behaviour).
-    The feature source is restored unconditionally in `finally` — the worktree is left intact."""
+    When a real cook is in play this runs SEALED (untrusted test code never touches the host)."""
     target = next((f for f in cited if f.endswith(".py")
                    and not os.path.basename(f).startswith("test_")), None)
     if not target:
@@ -100,8 +118,17 @@ def _discriminates(repo: str, test_relpath: str, cited: list[str]) -> tuple[bool
     if gutted == original:
         return True, f"{target} has no function bodies to gut"
 
-    # PYTHONDONTWRITEBYTECODE=1 so the run leaves NO __pycache__ — the verdict must change nothing (AC-5).
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    if reality._use_sandbox():
+        def _gut(dst):   # gut the target IN THE SANDBOX COPY; the cook's worktree is never touched
+            with open(os.path.join(dst, target), "w", encoding="utf-8") as f:
+                f.write(gutted)
+        rc, _out, _ = reality.sandboxed_run(repo, ["python3", test_relpath], prepare=_gut)
+        if rc == 0:
+            return False, f"test PASSES even with {target} gutted — it asserts nothing real (cannot go red)"
+        return True, f"test FAILS on gutted {target} — it can go red (genuinely discriminates)"
+
+    # docker-free gated path (trusted fixtures): mutate the worktree in place, restore in finally.
+    env = {**reality._minimal_env(), "PYTHONDONTWRITEBYTECODE": "1"}
     try:
         with open(target_path, "w", encoding="utf-8") as f:
             f.write(gutted)
@@ -145,8 +172,21 @@ def _covers_feature_code(repo: str, test_relpath: str, cited: list[str]) -> tupl
     if not body_lines:
         return True, f"{target} has no function bodies to cover"
 
+    if reality._use_sandbox():   # SEALED stdlib-tracer run — never execute cook code on the host
+        _rc, out, _ = reality.sandboxed_run(repo, ["python3", "-c", _TRACER, target, test_relpath])
+        executed: set[int] = set()
+        for line in out.splitlines():
+            if line.startswith("THOR_COV:"):
+                try:
+                    executed = set(json.loads(line[len("THOR_COV:"):]))
+                except json.JSONDecodeError:
+                    executed = set()
+        if executed & body_lines:
+            return True, f"executed {len(executed & body_lines)} body line(s) of {target}"
+        return False, f"test imported but never executed the code in {target} (coverage-of-diff)"
+
     cov_file = os.path.join(repo, f".cov_{uuid.uuid4().hex}")
-    env = {**os.environ, "COVERAGE_FILE": cov_file, "PYTHONDONTWRITEBYTECODE": "1"}
+    env = {**reality._minimal_env(), "COVERAGE_FILE": cov_file, "PYTHONDONTWRITEBYTECODE": "1"}
     try:
         subprocess.run([sys.executable, "-m", "coverage", "run", test_relpath],
                        cwd=repo, env=env, capture_output=True, timeout=30)

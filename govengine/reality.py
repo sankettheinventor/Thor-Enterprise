@@ -11,13 +11,78 @@ If any reader cannot read its source, it raises RealityError → the engine fail
 from __future__ import annotations
 
 import os
+import shlex
+import shutil
 import subprocess
+import tempfile
 
 from adapters import gitea_adapter
 
 
 class RealityError(Exception):
     """Reality could not be read (git/CI/audit unavailable) — the engine must fail closed."""
+
+
+# ---------------------------------------------------------------------------
+# SANDBOXED VERIFICATION (RED-TEAM CRITICAL): the verifier/regression test is written BY THE COOK. Running
+# it directly on the control plane is arbitrary code execution + secret exfiltration (the plane env holds
+# the API token, DB creds, signing material). When a real cook is in play (THOR_COOK set), every test run
+# happens inside a SEALED, NETWORK-DISABLED, minimal-env, non-root container against a COPY of the repo, so
+# untrusted cook code can neither reach the host, its secrets, nor the network. The docker-free gated suite
+# (trusted fixtures, THOR_COOK unset) runs a minimal-env host subprocess.
+def _use_sandbox() -> bool:
+    return bool(os.environ.get("THOR_COOK")) and os.environ.get("THOR_VERIFY_SANDBOX", "1") != "0"
+
+
+def _minimal_env() -> dict:
+    return {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", "/tmp"), "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+def sandboxed_run(repo: str, argv: list[str], *, timeout: int = 30, prepare=None,
+                  read_back: str | None = None) -> tuple[int, str, str | None]:
+    """Run argv inside a sealed ephemeral container against a COPY of repo. `prepare(dst)` may mutate the
+    copy before the run (e.g. gut function bodies). Returns (exit_code, output, read_back_contents|None)."""
+    import docker as _docker
+
+    from wall import config
+    work = tempfile.mkdtemp(prefix="thor-verify-")
+    dst = os.path.join(work, "r")
+    container = None
+    try:
+        shutil.copytree(repo, dst, symlinks=False, ignore=shutil.ignore_patterns(".git"))
+        if prepare is not None:
+            prepare(dst)
+        client = _docker.from_env()
+        container = client.containers.run(
+            config.ROOM_IMAGE, entrypoint="", command=["sh", "-c", " ".join(shlex.quote(a) for a in argv)],
+            working_dir="/work", mounts=[_docker.types.Mount("/work", dst, type="bind")],
+            network_disabled=True, read_only=True, user="cook", cap_drop=["ALL"],
+            security_opt=["no-new-privileges"], mem_limit="512m", pids_limit=256,
+            tmpfs={"/tmp": "", "/home/cook": "uid=1000,gid=1000"},
+            environment={"PYTHONDONTWRITEBYTECODE": "1", "HOME": "/home/cook",
+                         "PATH": "/usr/local/bin:/usr/bin:/bin"},
+            detach=True)
+        try:
+            rc = container.wait(timeout=timeout).get("StatusCode", 1)
+        except Exception:  # noqa: BLE001 — timeout / docker hiccup → treat as a failed (non-zero) run
+            rc = 124
+        out = container.logs().decode("utf-8", "replace")[-4000:]
+        content = None
+        if read_back:
+            try:
+                with open(os.path.join(dst, read_back), encoding="utf-8") as f:
+                    content = f.read()
+            except OSError:
+                content = None
+        return rc, out, content
+    finally:
+        if container is not None:
+            try:
+                container.remove(force=True)
+            except Exception:  # noqa: BLE001
+                pass
+        shutil.rmtree(work, ignore_errors=True)
 
 
 # ---- 6.2 Git Ground-Truth Reader ----
@@ -44,16 +109,18 @@ def head_sha(repo: str, ref: str = "HEAD") -> str:
 
 # ---- 6.3 Test/CI Verdict Reader (trigger a fresh verification run; CI proper = Module 12) ----
 def run_test(repo: str, test_relpath: str | None) -> tuple[int, str]:
-    """Run a test file in a fresh subprocess; return (exit_code, output). exit 0 = pass."""
+    """Run the (cook-written) test and return (exit_code, output). exit 0 = pass. A MACHINE runs it —
+    never the agent's word — and when a real cook is in play it runs SEALED (no host, no secrets, no net)."""
     if not test_relpath:
         return 1, "no test file declared"
-    path = os.path.join(repo, test_relpath)
-    if not os.path.exists(path):
+    if not os.path.exists(os.path.join(repo, test_relpath)):
         return 1, f"test file missing: {test_relpath}"
-    env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}   # don't litter __pycache__ (read-only spirit)
-    try:
-        p = subprocess.run(["python3", path], capture_output=True, text=True, timeout=30,
-                           cwd=repo, env=env)
+    if _use_sandbox():
+        rc, out, _ = sandboxed_run(repo, ["python3", test_relpath])
+        return rc, out
+    try:                                                   # docker-free gated suite (trusted fixtures)
+        p = subprocess.run(["python3", os.path.join(repo, test_relpath)], capture_output=True, text=True,
+                           timeout=30, cwd=repo, env=_minimal_env())
         return p.returncode, (p.stdout + p.stderr)
     except subprocess.TimeoutExpired:
         raise RealityError("verification run timed out")
