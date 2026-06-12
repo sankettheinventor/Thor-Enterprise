@@ -188,6 +188,21 @@ class BuildStage(Stage):
         _git(repo, "-c", "user.email=cook@thor", "-c", "user.name=cook", "commit", "-q",
              "-m", f"implement {feature.get('title', fid)} [{fid}]")
         exit_code = result.get("exit_code")
+        # AUD-realcook-moat: the in-room hook governs each write but logs IN the room, not to the ledger,
+        # so without this the ledger/cockpit would show nothing the real cook did and the verdict would
+        # reconstruct an EMPTY files_touched. Record what the cook ACTUALLY landed (the git diff = the writes
+        # the in-room hook let onto the branch) as allow decisions — the audit trail is real, and the verdict
+        # reconstructs files_touched from reality. (Out-of-scope writes are still caught by _stakes.)
+        if manager is not None:
+            try:
+                from govengine import reality
+                _allow = type("V", (), {"decision": "allow", "reason": "real cook landed (audit)",
+                                        "classification": "non_critical"})()
+                for changed in sorted(reality.changed_files(repo, branch, "main")):
+                    manager.record_decision(_allow, {"room_id": result["room_id"], "type": "tool_call",
+                                                     "name": "write_file", "target": changed})
+            except Exception:  # noqa: BLE001 — audit best-effort; the verdict is the enforcement
+                pass
         # The branch is now on the host repo; the verdict reads git + runs tests on the HOST — it does not
         # need the build room. Destroy it immediately so no cook container (holding the cook's OWN
         # credential) leaks on a not_done/escalate/stop path (AUD-realcook-hygiene). The cook exit_code is

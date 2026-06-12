@@ -46,6 +46,14 @@ def _is_test_file(contract: dict, path: str) -> bool:
 def _stakes(contract: dict, changed: set[str]) -> str:
     protected = set(contract.get("protected_files", []))
     scope = set(contract.get("scope", {}).get("files", []))
+    # Non-Python contracted source cannot be coverage-/discrimination-verified (the anti-hollow gate is
+    # .py-only) — so its "tests" prove nothing mechanically. Escalate to a human signature rather than let
+    # unverifiable web/config work earn an auto-`done` (HH-nonpy-coverage). Python source keeps the full
+    # mechanical guarantee; this only raises the bar for what THOR cannot yet verify by itself.
+    for f in scope:
+        base = f.rsplit("/", 1)[-1]
+        if "." in base and not base.endswith(".py") and not _is_test_file(contract, f):
+            return "high"
     for f in changed:
         if f in protected or f.rsplit("/", 1)[-1] in DEP_MANIFESTS:
             return "high"
