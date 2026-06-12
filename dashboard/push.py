@@ -8,9 +8,12 @@ Same principle as the rest of THOR: the most-exposed surface carries the least s
 """
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import socket
 from pathlib import Path
+from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from py_vapid import Vapid01
@@ -51,10 +54,35 @@ def _save(subs: list[dict]) -> None:
     _SUBS.write_text(json.dumps(subs))
 
 
+def _safe_endpoint(endpoint: str) -> bool:
+    """SSRF guard: `/push/subscribe` is unauthenticated, so an attacker must NOT be able to register an
+    endpoint that makes THOR POST to an internal service. Require HTTPS resolving to a PUBLIC IP
+    (AUD-push-ssrf). The push payload is end-to-end encrypted, but the request itself must not be SSRF."""
+    try:
+        u = urlparse(endpoint or "")
+    except ValueError:
+        return False
+    if u.scheme != "https" or not u.hostname:
+        return False
+    try:
+        infos = socket.getaddrinfo(u.hostname, None)
+    except OSError:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            return False
+    return bool(infos)
+
+
 def subscribe(sub: dict) -> int:
-    """Store a device's push subscription (endpoint + p256dh + auth). Returns the subscriber count."""
+    """Store a device's push subscription (endpoint + p256dh + auth). Returns the subscriber count.
+    Rejects an endpoint that isn't HTTPS-to-a-public-host (SSRF defence on this unauth surface)."""
     subs = _load()
-    if sub.get("endpoint") and sub not in subs:
+    if sub.get("endpoint") and _safe_endpoint(sub["endpoint"]) and sub not in subs:
         subs.append(sub)
         _save(subs)
     return len(subs)

@@ -117,6 +117,7 @@ def provision_room(
         environment=env,
         mem_limit=mem,
         nano_cpus=int(cpu * 1e9),
+        pids_limit=512,                    # cap process count — a cook fork-bomb can't exhaust host PIDs
         user="cook",                       # unprivileged (D2)
         cap_drop=["ALL"],                  # drop Linux capabilities (D2)
         security_opt=["no-new-privileges"],

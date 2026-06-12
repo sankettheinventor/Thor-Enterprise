@@ -324,7 +324,12 @@ class ThorManager:
         self.conn.commit()
 
     def rebuild_from_log(self) -> None:
-        """FR-13: clear the projections and rebuild them purely by replaying the EventLog."""
+        """FR-13: clear the projections and rebuild them purely by replaying the EventLog. The hash-chain
+        is VERIFIED first — a boot/replay on a tampered ledger fails CLOSED rather than rebuilding forged
+        state (the chain integrity guarantee is now enforced on the load-bearing replay path, not just in
+        smokes)."""
+        if not self.eventlog.verify_chain():
+            raise RuntimeError("ledger hash-chain verification FAILED — refusing to replay a tampered ledger")
         with self.conn.cursor() as cur:
             cur.execute("TRUNCATE rooms, cards, features")
         self.conn.commit()

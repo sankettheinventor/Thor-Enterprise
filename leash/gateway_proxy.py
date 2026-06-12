@@ -40,21 +40,25 @@ def _allowlisted(host: str) -> bool:
     return host in ALLOWLIST or any(host == a or host.endswith("." + a) for a in ALLOWLIST)
 
 
-def _resolves_public(host: str) -> bool:
-    """SSRF / DNS-rebinding guard: refuse if the host resolves to ANY private/loopback/link-local/reserved
-    address — an allowlisted NAME must not be rebound to an internal service (AUD-doget-cred)."""
+def _safe_ip(host: str) -> str | None:
+    """SSRF / DNS-rebinding guard. Resolve ONCE and return a single PUBLIC IP to connect to, or None if the
+    host resolves to ANY private/loopback/link-local/reserved/multicast address. The caller connects to the
+    RETURNED IP — so the allowlist check and the actual connection use the SAME validated address, closing
+    the classic resolve-then-connect TOCTOU (a rebind can't swap in an internal IP after the check)."""
     try:
         infos = socket.getaddrinfo(host, None)
     except OSError:
-        return False
+        return None
+    chosen = None
     for info in infos:
         try:
             ip = ipaddress.ip_address(info[4][0])
         except ValueError:
-            return False
+            return None
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            return False
-    return bool(infos)
+            return None
+        chosen = chosen or info[4][0]
+    return chosen
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -69,14 +73,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(403)
             self.end_headers()
             return
-        if not _allowlisted(host) or not _resolves_public(host):
+        pinned = _safe_ip(host)
+        if not _allowlisted(host) or pinned is None:
             _record("deny", host, "egress CONNECT not allowlisted or resolves to a private IP (Layer B)")
             self.send_response(403)
             self.end_headers()
             return
         _record("allow", host, "allowlisted CONNECT")
         try:
-            upstream = socket.create_connection((host, port), timeout=10)
+            upstream = socket.create_connection((pinned, port), timeout=10)   # PINNED IP — no rebind TOCTOU
         except Exception as e:  # noqa: BLE001 — upstream unreachable
             _record("error", host, f"upstream connect failed: {e}")
             self.send_response(502)
@@ -113,7 +118,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # forward-proxy: self.path is an absolute URL
         host = urlparse(self.path).hostname or ""
-        if not _allowlisted(host) or not _resolves_public(host):
+        if not _allowlisted(host) or _safe_ip(host) is None:
             _record("deny", host, "egress destination not allowlisted or resolves to a private IP (Layer B)")
             self.send_response(403)
             self.end_headers()
