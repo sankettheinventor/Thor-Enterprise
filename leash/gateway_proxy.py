@@ -6,12 +6,14 @@ so it runs from the thor-room image without any pip install. For every outbound 
 makes (forced here by topology — the room has no other route), it:
 
   * extracts the destination host (Layer B egress inspection),
-  * ALLOWS only allowlisted destinations; DENIES the rest with a governance reason (FR-9),
-  * injects credentials for approved destinations (FR-3/FR-12) — creds live HERE, never in the room,
+  * ALLOWS only allowlisted destinations that resolve to a PUBLIC IP on :443; DENIES the rest (FR-9),
+  * never attaches the upstream credential to a cook-named request (the cook carries its own model auth
+    end-to-end inside TLS; the gateway controls WHERE, not the content),
   * records every decision to a mounted log (read back by the host to verify AC-5/AC-6).
 
 Config via env: LEASH_ALLOWLIST (comma hosts), LEASH_UPSTREAM_CRED, LEASH_DECISION_LOG.
 """
+import ipaddress
 import json
 import os
 import select
@@ -38,6 +40,23 @@ def _allowlisted(host: str) -> bool:
     return host in ALLOWLIST or any(host == a or host.endswith("." + a) for a in ALLOWLIST)
 
 
+def _resolves_public(host: str) -> bool:
+    """SSRF / DNS-rebinding guard: refuse if the host resolves to ANY private/loopback/link-local/reserved
+    address — an allowlisted NAME must not be rebound to an internal service (AUD-doget-cred)."""
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+            return False
+    return bool(infos)
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_CONNECT(self):  # HTTPS tunnel — the method real agents (Claude Code etc.) use for :443
         host = self.path.rsplit(":", 1)[0]
@@ -45,8 +64,13 @@ class Handler(BaseHTTPRequestHandler):
             port = int(self.path.rsplit(":", 1)[1])
         except (IndexError, ValueError):
             port = 443
-        if not _allowlisted(host):
-            _record("deny", host, "egress CONNECT not allowlisted (Layer B)")
+        if port != 443:
+            _record("deny", host, f"egress CONNECT to non-443 port {port} refused (AUD-doget-cred)")
+            self.send_response(403)
+            self.end_headers()
+            return
+        if not _allowlisted(host) or not _resolves_public(host):
+            _record("deny", host, "egress CONNECT not allowlisted or resolves to a private IP (Layer B)")
             self.send_response(403)
             self.end_headers()
             return
@@ -89,16 +113,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # forward-proxy: self.path is an absolute URL
         host = urlparse(self.path).hostname or ""
-        if not _allowlisted(host):
-            _record("deny", host, "egress destination not allowlisted (Layer B)")
+        if not _allowlisted(host) or not _resolves_public(host):
+            _record("deny", host, "egress destination not allowlisted or resolves to a private IP (Layer B)")
             self.send_response(403)
             self.end_headers()
             self.wfile.write(f"GovernanceDenied: egress to {host} not allowed".encode())
             return
         _record("allow", host, "allowlisted")
+        # The upstream credential is NEVER attached to a cook-named plaintext request — that would hand the
+        # secret to whatever allowlisted/rebound host the cook picks (AUD-doget-cred). Real model traffic
+        # uses CONNECT/TLS with the cook's OWN token end-to-end; the gateway only controls WHERE.
         req = urllib.request.Request(self.path)
-        if UPSTREAM_CRED:
-            req.add_header("Authorization", f"Bearer {UPSTREAM_CRED}")  # injected by gateway, not room
         try:
             with urllib.request.urlopen(req, timeout=5) as r:
                 body = r.read()

@@ -48,15 +48,24 @@ def _load_scope() -> tuple[str, ...] | None:
     return tuple(scope)
 
 
+# Tools that WRITE the filesystem. If one is matched but no path can be extracted, fail CLOSED (deny) —
+# an unparsed write must never slip through ungoverned (AUD-hook-failopen).
+_WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit", "Create", "Update", "Patch"}
+_PATH_KEYS = ("file_path", "notebook_path", "path", "filePath", "target_file")
+
+
 def _target_paths(tool_name: str, tool_input: dict) -> list[str]:
-    """The file path(s) a tool would write. Robust to field-name variation across tools/versions:
-    every Claude Code file tool exposes the path as `file_path` (top-level or per-edit)."""
+    """The file path(s) a tool would write. Robust to field-name variation across tools/versions —
+    `file_path`, `notebook_path` (NotebookEdit), `path`, etc., at top level or per-edit."""
     paths: list[str] = []
-    if isinstance(tool_input.get("file_path"), str):
-        paths.append(tool_input["file_path"])
+    for key in _PATH_KEYS:
+        if isinstance(tool_input.get(key), str):
+            paths.append(tool_input[key])
     for e in tool_input.get("edits", []) or []:
-        if isinstance(e, dict) and isinstance(e.get("file_path"), str):
-            paths.append(e["file_path"])
+        if isinstance(e, dict):
+            for key in _PATH_KEYS:
+                if isinstance(e.get(key), str):
+                    paths.append(e[key])
     return paths
 
 
@@ -77,8 +86,11 @@ def evaluate_event(event: dict) -> tuple[bool, str]:
     ti = event.get("tool_input", {}) or {}
 
     paths = _target_paths(tool, ti)
-    if not paths and tool != "Bash":
-        return True, "no file path to govern"     # a non-file, non-Bash tool (e.g. Read) — allow
+    if not paths:
+        if tool in _WRITE_TOOLS:                   # a write tool we could not parse → fail CLOSED
+            return False, f"{tool}: write tool with no parseable path → fail closed (AUD-hook-failopen)"
+        if tool != "Bash":
+            return True, "no file path to govern"  # a genuine non-write tool (Read, Glob, …) — allow
 
     for p in paths:
         # the policy is path-based and worktree-relative; computing relpath turns an absolute or

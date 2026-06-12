@@ -90,6 +90,12 @@ def evaluate(policy: FrozenPolicy, action: dict) -> Verdict:
 
     target = action.get("target") or ""
 
+    # A WRITE action whose path could not be resolved (inspector returned no target) FAILS CLOSED — an
+    # unparseable write must never fall through to the allow at the end (AUD-policy-empty-target).
+    _WRITE_OPS = ("write_file", "edit_file", "delete_file", "append_file", "create_file", "patch_file")
+    if not target and action.get("name") in _WRITE_OPS:
+        return Verdict("deny", f"write with no resolvable path, denied: {action.get('name')!r}", "denied")
+
     # 0) path-traversal / absolute path → deny BEFORE any scope reasoning (BUG-1, sandbox escape).
     #    A raw-string scope match can be fooled by 'src/../../x'; reject the escape outright.
     if _is_unsafe_path(target):
