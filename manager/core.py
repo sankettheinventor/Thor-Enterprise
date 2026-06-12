@@ -117,6 +117,11 @@ class ThorManager:
             actor="leash", room_id=action.get("room_id"),
         )
 
+    def record_threat(self, threat: dict) -> dict:
+        """Record a detected attack signature (the Threat Detector's output) to the tamper-evident ledger
+        so an operator can reconstruct the incident (security invariant #7: audit for incident response)."""
+        return self._record("threat.detected", threat, actor="threat-detector")
+
     # ---- 3.2 Lifecycle Coordinator (drives the Wall) ----
     def provision_room(self, feature_id: str, task_type: str = "build", branch: str | None = None,
                        network_mode: str = "sealed", **wall_kw) -> dict:
@@ -181,20 +186,27 @@ class ThorManager:
         base = f"{card_id}|{hashlib.sha256(_canon(payload).encode()).hexdigest()}"
         return f"{base}|{nonce}" if nonce else base
 
+    def _sig_rejected(self, card_id: str, reason: str, signer_pub_b64: str = "") -> dict:
+        """Record a rejected signature attempt (spoofing/replay signal the Threat Detector scores) and
+        return the standard failure dict."""
+        self._record("signature.rejected", {"card_id": card_id, "reason": reason,
+                                             "signer": (signer_pub_b64 or "")[:12]})
+        return {"verified": False, "reason": reason}
+
     def approve(self, card_id: str, signature_b64: str, signer_pub_b64: str,
                 nonce: str | None = None) -> dict:
         card = self._get_card(card_id)
         if not card or card["status"] in ("approved", "rejected"):
-            return {"verified": False, "reason": "card not open"}      # replay on an approved card (AC-5)
+            return self._sig_rejected(card_id, "card not open", signer_pub_b64)   # replay on a decided card
         if not self.is_authorized_signer(signer_pub_b64):
-            return {"verified": False, "reason": "unauthorized signer — not a registered operator key"}
+            return self._sig_rejected(card_id, "unauthorized signer — not a registered operator key", signer_pub_b64)
         # BUG-3: the one-time nonce is MANDATORY — an absent nonce no longer skips the replay lock.
         # A captured/pre-signed no-nonce signature must be rejected; the card stays open. (fail-closed)
         if nonce is None or self._challenges.get(card_id) != nonce:
-            return {"verified": False, "reason": "missing or replayed challenge — card stays open"}
+            return self._sig_rejected(card_id, "missing or replayed challenge — card stays open", signer_pub_b64)
         material = self.card_material(card_id, card["payload"], nonce)
         if not self.identity.verify_signature(signer_pub_b64, material, signature_b64)["valid"]:
-            return {"verified": False, "reason": "signature invalid — card stays open"}  # AC-5
+            return self._sig_rejected(card_id, "signature invalid — card stays open", signer_pub_b64)  # AC-5
         self._challenges.pop(card_id, None)                            # consume the nonce (replay defence)
         self._record("card.approved", {"card_id": card_id, "decided_by": signer_pub_b64[:12],
                                       "signature": signature_b64}, feature_id=card["feature_id"])

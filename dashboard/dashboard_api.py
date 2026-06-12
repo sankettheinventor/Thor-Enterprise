@@ -9,13 +9,17 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Path
 from fastapi.responses import PlainTextResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from thor_http_auth import require_token
 
 app = FastAPI(title="THOR DashboardAPI", version="0.1.0")
+
+# Allow-list for any client-supplied identifier (feature_id / command). Positive validation (invariant #7):
+# blocks path traversal, shell metacharacters, refspec tricks, and unbounded-input DoS at the edge.
+_IDPAT = r"^[A-Za-z0-9_-]{1,64}$"
 _service = None   # set via dashboard.dashboard_api.bind(service) when the control plane boots
 
 
@@ -25,9 +29,9 @@ def bind(service) -> None:
 
 
 class FeatureIn(BaseModel):
-    title: str
-    context: str = ""
-    priority: int = 3
+    title: str = Field(min_length=1, max_length=200)
+    context: str = Field(default="", max_length=4000)
+    priority: int = Field(default=3, ge=0, le=3)
 
 
 class Sig(BaseModel):
@@ -87,6 +91,12 @@ def findings():
 @app.get("/lies")
 def lies():
     return _service.lies_caught()
+
+
+@app.get("/threats")
+def threats():
+    """Live attack-detection feed — named, scored, STRIDE-tagged signatures over the recent window."""
+    return _service.threats()
 
 
 @app.get("/health/system")
@@ -149,14 +159,14 @@ def add_feature(f: FeatureIn, _: None = Depends(require_token)):
 
 
 @app.delete("/features/{feature_id}")
-def remove_feature(feature_id: str, _: None = Depends(require_token)):
+def remove_feature(feature_id: str = Path(pattern=_IDPAT), _: None = Depends(require_token)):
     """Remove a feature from the catalog (event-sourced; the ledger keeps the history)."""
     _service.manager.remove_feature(feature_id)
     return {"ok": True, "removed": feature_id}
 
 
 @app.post("/features/{feature_id}/stop")
-def stop_feature(feature_id: str, _: None = Depends(require_token)):
+def stop_feature(feature_id: str = Path(pattern=_IDPAT), _: None = Depends(require_token)):
     """Stop work on a task: destroy its active room and move it back to 'ready' (branch + ledger kept)."""
     return _service.stop_feature(feature_id)
 
@@ -200,12 +210,13 @@ def reject(s: Sig, _: None = Depends(require_token)):
 
 
 class CmdIn(BaseModel):
-    feature_id: str
-    priority: int | None = None
+    feature_id: str = Field(pattern=_IDPAT)
+    priority: int | None = Field(default=None, ge=0, le=3)
 
 
 @app.post("/commands/{command}")
-def run_command(command: str, c: CmdIn, _: None = Depends(require_token)):
+def run_command(command: str = Path(pattern=r"^[a-z_]{1,32}$"), c: CmdIn = ...,
+                _: None = Depends(require_token)):
     """Phone command parity — but ONLY the bounded allowlist (Module 9.5: the most-exposed device gets
     the least catastrophic power). Anything outside the allowlist is refused; reaching into a room or
     bypassing governance is impossible from here by design."""

@@ -31,6 +31,7 @@ class Sentinel:
         self.halts: list[dict] = []
         self.failures: dict[str, int] = {}      # per-component failure counts (meta-trust inputs, FR-16)
         self._heartbeat = 0
+        self._last_threat_scan = 0.0            # throttle the attack-detection sweep (see tick)
         self._maintenance: dict | None = None
         self.accepts_work = False
         self.halted = False            # C3: set on a systemic halt → the Manager blocks all new work
@@ -259,6 +260,24 @@ class Sentinel:
             self._maintenance["ticks"] -= 1
             if self._maintenance["ticks"] <= 0:
                 self._maintenance = None          # auto-close — never silences outside the window
+        self._scan_threats()
+
+    def _scan_threats(self) -> None:
+        """Periodic attack-detection sweep (throttled to ~30s): name+score the recent denial/forgery/tamper
+        stream and escalate CRITICAL signals (e.g. ledger tamper) to a halt. Detection is defense-in-depth —
+        the attack is already blocked by the time it is counted — and must never crash the heartbeat."""
+        if self.manager is None:
+            return
+        import time as _time
+        now = _time.time()
+        if now - self._last_threat_scan < 30:
+            return
+        self._last_threat_scan = now
+        try:
+            from sentinel.threat_detector import ThreatDetector
+            ThreatDetector(self.manager).run()
+        except Exception:  # noqa: BLE001 — detection must never crash the Sentinel
+            pass
 
     # ---- 10.9 URGENT from the Self-Audit model (M17) — the cheap model escalates, Sentinel enforces (FR-9/AC-9) ----
     def receive_urgent(self, finding: dict) -> dict:

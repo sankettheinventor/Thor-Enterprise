@@ -231,6 +231,12 @@ class DashboardService:
         self._action("stop", {"feature_id": feature_id, "rooms": stopped, "failed": failed})
         return {"ok": not failed, "stopped": stopped, "failed": failed}
 
+    def threats(self) -> dict:
+        """Live attack-signal scan (READ-ONLY) for the cockpit's 'attacks detected' panel — names + scores
+        the current denial/forgery/tamper signatures. The recording+escalating run is the Sentinel's."""
+        from sentinel.threat_detector import ThreatDetector
+        return {"threats": ThreatDetector(self.manager).scan()}
+
     def dry_run(self) -> dict:
         if self.scheduler_factory is None:
             return {"waves": [], "cost_estimate": 0, "provisioned": 0}
