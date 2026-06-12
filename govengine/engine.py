@@ -36,9 +36,11 @@ class VerdictContext:
 
 
 def _is_test_file(contract: dict, path: str) -> bool:
-    base = path.rsplit("/", 1)[-1]
-    return (path in (contract.get("test_file"), contract.get("regression_file"))
-            or base.startswith("test_") or base.endswith("_test.py"))
+    # ONLY the contract's DECLARED verifier/regression tests are exempt from scope-containment. A
+    # name-based exemption (`test_*.py`/`*_test.py`) let a cook ship arbitrary out-of-scope code in a
+    # test-named file and dodge the high-stakes escalation entirely (audit CRITICAL). The declared test
+    # paths are trusted state (the recorded assign_task slice), not a filename the cook controls.
+    return path in (contract.get("test_file"), contract.get("regression_file"))
 
 
 def _stakes(contract: dict, changed: set[str]) -> str:
