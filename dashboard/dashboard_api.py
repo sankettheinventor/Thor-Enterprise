@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
@@ -139,25 +140,40 @@ def commands():
     return _service.commands()
 
 
+_MAX_STREAMS = int(os.environ.get("THOR_MAX_STREAMS", "128"))
+_active_streams = 0
+
+
 @app.get("/stream")
 async def stream():
     """Real-time sync (Module 9: every head is a REMOTE HEAD on the same Manager truth). Server-Sent
     Events push a tick whenever the ledger advances (a new signed event), so the laptop AND the phone
-    re-sync instantly off the ONE ledger — no second state, no drift. Read-only; reads are public."""
+    re-sync instantly off the ONE ledger — no second state, no drift. Read-only; reads are public.
+    Concurrent streams are capped (THOR_MAX_STREAMS) so a flood of held-open connections can't exhaust the
+    plane (503 when full)."""
+    global _active_streams
+    if _active_streams >= _MAX_STREAMS:
+        return JSONResponse({"detail": "too many concurrent streams"}, status_code=503)
+
     async def gen():
-        yield "event: hello\ndata: {}\n\n"        # connected
-        last = -1
-        while True:
-            try:
-                seq = _service.manager.eventlog.count()
-            except Exception:                      # noqa: BLE001 — transient DB blip: hold last, keep stream alive
-                seq = last
-            if seq != last:
-                last = seq
-                yield f"data: {json.dumps({'seq': seq})}\n\n"
-            else:
-                yield ": keep-alive\n\n"           # comment frame so proxies don't time the stream out
-            await asyncio.sleep(1)
+        global _active_streams
+        _active_streams += 1
+        try:
+            yield "event: hello\ndata: {}\n\n"        # connected
+            last = -1
+            while True:
+                try:
+                    seq = _service.manager.eventlog.count()
+                except Exception:                  # noqa: BLE001 — transient DB blip: hold last, keep alive
+                    seq = last
+                if seq != last:
+                    last = seq
+                    yield f"data: {json.dumps({'seq': seq})}\n\n"
+                else:
+                    yield ": keep-alive\n\n"        # comment frame so proxies don't time the stream out
+                await asyncio.sleep(1)
+        finally:
+            _active_streams -= 1
 
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no",
