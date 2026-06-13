@@ -29,6 +29,13 @@ The verdict runs the **cook-authored** verifier/regression test. That code is un
 **minimal env** — no API token / DB creds / signing material — against a repo COPY) whenever a real cook is
 in play (`THOR_COOK` set). Proven: `tools/qa/prove_verify_sandbox.py` (secret/host-write/network all blocked).
 
+## Host-side git (another untrusted-input-execution boundary, closed)
+The cook writes `/work` including its `.git`, and THOR runs host-side git (`add`/`commit`/`checkout`/`push`)
+on that repo. A planted `.git/hooks/*` or a `core.fsmonitor`/`core.sshCommand` config would execute on the
+plane — RCE. Every host-side git invocation now runs with those neutralised via `-c` flags that override the
+repo's local config (`core.hooksPath=/dev/null`, `core.fsmonitor=`, `core.sshCommand=`,
+`protocol.ext.allow=never`). Proven: `tools/qa/prove_git_hook_safety.py`.
+
 ## How we KNOW an attack is happening — the Threat Detector
 `sentinel/threat_detector.py` reads the tamper-evident ledger + the egress decision log over a sliding window
 and turns the cage's stream of denials into **named, scored, STRIDE-tagged** signals. The Sentinel runs it
