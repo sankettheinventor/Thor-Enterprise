@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 
 from adapters import gitea_adapter
-from sdlc.stages import _git
+from sdlc.stages import _git, _sanitize_git_dir
 
 
 def _attack_repo():
@@ -42,6 +42,35 @@ def check(gitfn, label):
     assert landed, f"{label}: the legitimate commit must still land"
 
 
+def check_sanitized():
+    """The full-flow defence: the cook plants a clean FILTER + a diff TEXTCONV + a hook (everything it
+    controls in /work/.git); THOR sanitizes the .git then runs host-side git. Nothing must execute."""
+    repo = tempfile.mkdtemp(prefix="san-")
+    subprocess.run(["git", "init", "-q", repo])
+    marker = os.path.join(repo, "SANITIZE_PWNED")
+    subprocess.run(["git", "-C", repo, "config", "filter.evil.clean", f"sh -c 'touch {marker}'"])
+    subprocess.run(["git", "-C", repo, "config", "diff.evil.textconv", f"sh -c 'touch {marker}'"])
+    open(os.path.join(repo, ".gitattributes"), "w").write("* filter=evil diff=evil\n")
+    hd = os.path.join(repo, ".git", "hooks")
+    os.makedirs(hd, exist_ok=True)
+    with open(os.path.join(hd, "pre-commit"), "w") as f:
+        f.write(f"#!/bin/sh\ntouch {marker}\n")
+    os.chmod(os.path.join(hd, "pre-commit"), 0o755)
+    open(os.path.join(repo, "src.py"), "w").write("x = 1\n")
+
+    _sanitize_git_dir(repo)                                    # THOR cleans the cook's .git
+    _git(repo, "add", "-A")                                    # would run the clean filter
+    _git(repo, "-c", "user.email=c", "-c", "user.name=c", "commit", "-q", "-m", "build")
+    open(os.path.join(repo, "src.py"), "w").write("x = 2\n")
+    _git(repo, "diff")                                         # would run the diff textconv
+    fired = os.path.exists(marker)
+    landed = subprocess.run(["git", "-C", repo, "log", "--oneline"], capture_output=True, text=True).stdout.strip()
+    print(f"[{'sanitize(filter+diff+hook)':22}] cook code executed on host: {fired} | commit landed: {bool(landed)}")
+    assert not fired, "a cook-planted filter/diff/hook EXECUTED after sanitize (RCE)"
+    assert landed, "the legitimate commit must still land after sanitize"
+
+
 check(_git, "sdlc.stages._git")
 check(gitea_adapter._git, "gitea_adapter._git")
-print("GIT_HOOK_SAFETY_OK — host-side git executes no cook-controlled code; commits still work.")
+check_sanitized()
+print("GIT_HOOK_SAFETY_OK — host-side git executes no cook-controlled code (hooks/filters/diff); commits still work.")

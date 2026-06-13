@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import subprocess
 
 from adapters import agt_adapter
@@ -37,6 +38,52 @@ _SAFE_GIT = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=", "-c", "c
 
 def _git(repo, *args):
     return subprocess.run(["git", "-C", repo, *_SAFE_GIT, *args], capture_output=True, text=True)
+
+
+# git config sections whose values are SHELL COMMANDS git runs (clean/smudge filters, diff textconv, merge
+# drivers, aliases, …). The cook controls .git/config + .gitattributes in its rw worktree, so these are RCE
+# vectors that `-c` flags can't neutralise (the cook names the driver). We strip them after the cook is done.
+_DANGEROUS_SECTIONS = ("filter.", "diff.", "merge.", "difftool.", "mergetool.", "alias.", "sendemail.",
+                       "credential.", "url.", "instead.")
+_DANGEROUS_CORE = {"core.hookspath", "core.fsmonitor", "core.sshcommand", "core.attributesfile",
+                   "core.editor", "core.pager", "core.fsmonitorhookversion"}
+
+
+def _sanitize_git_dir(repo: str) -> None:
+    """Neutralise EVERY git-config code-execution vector the cook could have planted in /work/.git before
+    THOR runs host-side git on it: delete planted hooks + untracked attributes, and remove driver sections
+    (filter/diff/merge/alias/…) and dangerous core.* keys from the repo's local config. Uses git's own
+    parser (a bare `git config` read runs no cook code). Defense-in-depth on top of the `_SAFE_GIT` flags."""
+    gd = os.path.join(repo, ".git")
+    if not os.path.isdir(gd):
+        return
+    hooks = os.path.join(gd, "hooks")
+    shutil.rmtree(hooks, ignore_errors=True)
+    os.makedirs(hooks, exist_ok=True)
+    try:
+        open(os.path.join(gd, "info", "attributes"), "w").close()   # an UNtracked attributes file
+    except OSError:
+        pass
+
+    def _cfg(*a):
+        return subprocess.run(["git", "-C", repo, *_SAFE_GIT, "config", "--local", *a],
+                              capture_output=True, text=True)
+
+    names = _cfg("--list", "--name-only").stdout.splitlines()
+    sections, core_keys = set(), set()
+    for raw in names:
+        key = raw.strip()
+        kl = key.lower()
+        if kl in _DANGEROUS_CORE:
+            core_keys.add(key)
+        elif any(kl.startswith(p) for p in _DANGEROUS_SECTIONS):
+            parts = key.split(".")
+            if len(parts) >= 2:
+                sections.add(".".join(parts[:-1]))   # filter.evil.clean → filter.evil
+    for key in core_keys:
+        _cfg("--unset-all", key)
+    for sec in sections:
+        _cfg("--remove-section", sec)
 
 
 def _dir_hash(repo: str) -> str:
@@ -167,6 +214,7 @@ class BuildStage(Stage):
             a["args"]["path"]: a["_verdict"]["status"]
             for a in (result["allowed"] + result["denied"] + result["escalated"])
             if a.get("name") == "write_file"}
+        _sanitize_git_dir(repo)   # the cook may have planted .git hooks/filters — strip before host git
         _git(repo, "add", "-A")
         _git(repo, "-c", "user.email=cook@thor", "-c", "user.name=cook", "commit", "-q",
              "-m", f"implement {feature.get('title', fid)} [{fid}]")
@@ -191,6 +239,7 @@ class BuildStage(Stage):
                   "regression_file": feature.get("regression_file")}
         runner = CookRunner()
         result = runner.run(slice_, worktree_host_path=repo)        # the agent builds in /work, in-room
+        _sanitize_git_dir(repo)   # the cook may have planted .git hooks/filters — strip before host git
         _git(repo, "add", "-A")
         _git(repo, "-c", "user.email=cook@thor", "-c", "user.name=cook", "commit", "-q",
              "-m", f"implement {feature.get('title', fid)} [{fid}]")

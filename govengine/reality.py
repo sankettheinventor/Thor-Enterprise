@@ -50,7 +50,10 @@ def sandboxed_run(repo: str, argv: list[str], *, timeout: int = 30, prepare=None
     dst = os.path.join(work, "r")
     container = None
     try:
-        shutil.copytree(repo, dst, symlinks=False, ignore=shutil.ignore_patterns(".git"))
+        # symlinks=True copies links AS links (never the TARGET's content) — a cook symlink to a host
+        # secret (e.g. the signing key) must not be slurped into the sandbox copy; it dangles harmlessly
+        # in the sealed container instead (info-disclosure defence).
+        shutil.copytree(repo, dst, symlinks=True, ignore=shutil.ignore_patterns(".git"))
         if prepare is not None:
             prepare(dst)
         client = _docker.from_env()
