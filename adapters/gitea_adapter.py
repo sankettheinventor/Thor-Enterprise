@@ -21,9 +21,16 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
+# Host-side git on a cook-controlled repo must execute NO cook code: disable hooks/fsmonitor/sshCommand and
+# the ext protocol (a planted .git/hooks/* or core.fsmonitor would otherwise run on the plane = RCE). The
+# -c flags override the repo's local .git/config.
+_SAFE_GIT = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=", "-c", "core.sshCommand=",
+             "-c", "protocol.ext.allow=never")
+
+
 def _git(repo: str, *args: str) -> str:
     out = subprocess.run(
-        ["git", "-C", repo, *args], capture_output=True, text=True, check=True
+        ["git", "-C", repo, *_SAFE_GIT, *args], capture_output=True, text=True, check=True
     )
     return out.stdout.strip()
 
@@ -174,7 +181,9 @@ class GiteaServerBackend(GitPort):
 
     def open_pr(self, repo: str, branch: str, meta: dict) -> dict:
         name = self._name(repo, meta)
-        subprocess.run(["git", "-C", repo, "push", "-f", self._remote(name), "main", branch],
+        # `git push` fires the local pre-push hook — neutralise hooks/config so a cook-planted hook can't
+        # run on the plane (same RCE class as commit hooks).
+        subprocess.run(["git", "-C", repo, *_SAFE_GIT, "push", "-f", self._remote(name), "main", branch],
                        capture_output=True, check=True)
         code, pr = self._api("POST", f"/repos/{self.owner}/{name}/pulls",
                              {"head": branch, "base": "main", "title": f"feature {meta.get('feature_id', '')}"})

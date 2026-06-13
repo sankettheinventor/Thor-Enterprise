@@ -28,8 +28,15 @@ from scheduler import cto_stub
 from .anatomy import Stage
 
 
+# The cook writes /work (incl. its .git) — host-side git on that repo MUST NOT execute cook-controlled
+# code: disable hooks, fsmonitor, and any sshCommand override (a planted .git/hooks/pre-commit would
+# otherwise run on the control plane = RCE). These -c flags override the repo's local .git/config.
+_SAFE_GIT = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=", "-c", "core.sshCommand=",
+             "-c", "protocol.ext.allow=never")
+
+
 def _git(repo, *args):
-    return subprocess.run(["git", "-C", repo, *args], capture_output=True, text=True)
+    return subprocess.run(["git", "-C", repo, *_SAFE_GIT, *args], capture_output=True, text=True)
 
 
 def _dir_hash(repo: str) -> str:
