@@ -62,6 +62,15 @@ class ThreatDetector:
                 "samples": [s for s in (samples or []) if s][:5]}
 
     # --- the scan ----------------------------------------------------------
+    @staticmethod
+    def _thresh(name: str, default: int) -> int:
+        """Detection thresholds are tunable per deployment (THOR_THREAT_<NAME>) — a noisy CI vs a quiet
+        prod want different bars; the defaults stay conservative."""
+        try:
+            return int(os.environ.get(f"THOR_THREAT_{name}", default))
+        except ValueError:
+            return default
+
     def scan(self, *, window_secs: int = 300, now: float | None = None) -> list[dict]:
         """Return the list of attack signatures currently firing over the window (read-only)."""
         now = now if now is not None else time.time()
@@ -75,28 +84,29 @@ class ThreatDetector:
         alarms = [e for e in events if e["event_type"] in ("security.alarm", "sentinel.kill")]
         egress = self._egress_denies(lo)
         chain_ok = self.manager.eventlog.verify_chain()
+        t_scope, t_egress, t_forge = self._thresh("SCOPE", 5), self._thresh("EGRESS", 5), self._thresh("FORGERY", 3)
 
         threats: list[dict] = []
         if not chain_ok:   # Tampering — the audit ledger itself was altered (the worst signal)
             threats.append(self._threat(
                 "ledger-tamper", "critical", "Tampering",
                 "the hash-chain failed verification — the append-only audit ledger has been altered", 1, 1))
-        if len(denies) >= 5:   # Elevation of Privilege — a cook hammering the scope boundary
+        if len(denies) >= t_scope:   # Elevation of Privilege — a cook hammering the scope boundary
             threats.append(self._threat(
                 "scope-probing", "high", "Elevation of Privilege",
                 f"{len(denies)} out-of-scope/denied actions in {window_secs}s — a cook is probing the cage",
-                len(denies), 5,
+                len(denies), t_scope,
                 samples=[self._payload(e).get("action", {}).get("target") for e in denies]))
-        if len(egress) >= 5:   # Information Disclosure — repeated tries to reach non-allowlisted hosts
+        if len(egress) >= t_egress:   # Information Disclosure — repeated tries to reach non-allowlisted hosts
             threats.append(self._threat(
                 "exfiltration-attempt", "high", "Information Disclosure",
                 f"{len(egress)} blocked egress attempts — repeated tries to reach non-allowlisted hosts",
-                len(egress), 5, samples=[d.get("host") for d in egress]))
-        if len(forged) >= 3:   # Spoofing — forged / replayed approval signatures
+                len(egress), t_egress, samples=[d.get("host") for d in egress]))
+        if len(forged) >= t_forge:   # Spoofing — forged / replayed approval signatures
             threats.append(self._threat(
                 "signature-forgery", "high", "Spoofing",
                 f"{len(forged)} rejected signatures — forged or replayed approval attempts",
-                len(forged), 3, samples=[self._payload(e).get("reason") for e in forged]))
+                len(forged), t_forge, samples=[self._payload(e).get("reason") for e in forged]))
         if dishonesty:   # Tampering — a cook fabricated a claim/test/result and was caught
             threats.append(self._threat(
                 "dishonest-cook", "high", "Tampering",

@@ -58,5 +58,16 @@ counted. Signatures are an **allow-list of known shapes**; new shapes are added 
 7. **Tamper-evident audit** — the signed hash-chain, verified on boot/replay; every security action recorded for incident reconstruction.
 8. **Documented threat model** — this file.
 
+## Egress isolation (defense in depth, kernel + userspace)
+The room sits on `thor-room-net` created **`internal=True`** — Docker installs the kernel iptables rules that
+give it **no route to the internet at all**; only the dual-homed gateway bridges to `thor-egress-net`. So the
+**L3 backstop is the network topology** (the cook cannot reach the internet even if the proxy were bypassed),
+and the gateway's IP-pinned, :443-only, SSRF-guarded allowlist is the **L7** layer on top.
+
+## Hardening added this pass
+- **Secret files** owner-only (`0600`/`0700`): the Ed25519 signing key and the VAPID key.
+- **Rate limit** (sliding window, per client) on the mutating surface — bounds brute-force / abuse (429); tune via `THOR_RL_MAX`/`THOR_RL_WINDOW`.
+- **Threat thresholds** are per-deployment tunable (`THOR_THREAT_SCOPE`/`_EGRESS`/`_FORGERY`).
+
 ## Honest residuals (tracked in `GAP-AND-RISK-REGISTER.md`)
-Single-host / single-commander (no RBAC, no k8s fleet); non-Python work escalates to a human (no mechanical coverage); the gateway is a userspace allowlist with no L3/L4 backstop; threat thresholds are static (no ML/baseline yet). None are silent — each is a register row.
+Single-host / single-commander (no RBAC, no k8s fleet); non-Python work escalates to a human (no mechanical coverage); detection is **static-threshold rules**, not a learned baseline (no ML anomaly model yet); rooms share `thor-room-net` (inter-room lateral movement is bounded only by rooms exposing no services). None are silent — each is a register row.

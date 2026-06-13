@@ -9,13 +9,24 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import Depends, FastAPI, Path
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi import Depends, FastAPI, HTTPException, Path, Request
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from thor_http_auth import require_token
+from thor_http_auth import rate_limit, require_token
 
 app = FastAPI(title="THOR DashboardAPI", version="0.1.0")
+
+
+@app.middleware("http")
+async def _rate_limit_middleware(request: Request, call_next):
+    """Per-client rate limit on the MUTATING surface (POST/PUT/DELETE/PATCH) — one place, all endpoints."""
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        try:
+            rate_limit(request)
+        except HTTPException as exc:
+            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+    return await call_next(request)
 
 # Allow-list for any client-supplied identifier (feature_id / command). Positive validation (invariant #7):
 # blocks path traversal, shell metacharacters, refspec tricks, and unbounded-input DoS at the edge.

@@ -33,6 +33,11 @@ def _vapid() -> Vapid01:
         v.generate_keys()
         _KEY.parent.mkdir(parents=True, exist_ok=True)
         v.save_key(str(_KEY))
+        try:                                  # the VAPID private key is a secret — owner-only (0600/0700)
+            os.chmod(_KEY.parent, 0o700)
+            os.chmod(_KEY, 0o600)
+        except OSError:
+            pass
     return v
 
 

@@ -12,8 +12,33 @@ from __future__ import annotations
 
 import hmac
 import os
+import time
+from collections import defaultdict, deque
 
-from fastapi import Header, HTTPException
+from fastapi import Header, HTTPException, Request
+
+# Per-client sliding-window rate limit on the mutating surface — bounds brute-force, credential-stuffing,
+# and abuse (a real attacker makes far more than a human/CI). Generous default so humans + tests never trip
+# it; tune with THOR_RL_MAX (requests) / THOR_RL_WINDOW (seconds); THOR_RL_MAX<=0 disables it.
+_RL_MAX = int(os.environ.get("THOR_RL_MAX", "240"))
+_RL_WINDOW = float(os.environ.get("THOR_RL_WINDOW", "60"))
+_rl_hits: dict[str, deque] = defaultdict(deque)
+
+
+def rate_limit(request: Request) -> None:
+    """FastAPI dependency for mutating endpoints: 429 when a client exceeds the window budget."""
+    rl_max = int(os.environ.get("THOR_RL_MAX", _RL_MAX))
+    if rl_max <= 0:
+        return
+    window = float(os.environ.get("THOR_RL_WINDOW", _RL_WINDOW))
+    client = request.client.host if request.client else "unknown"
+    now = time.time()
+    q = _rl_hits[client]
+    while q and q[0] < now - window:
+        q.popleft()
+    if len(q) >= rl_max:
+        raise HTTPException(status_code=429, detail="rate limit exceeded — slow down")
+    q.append(now)
 
 
 def token_required() -> bool:
