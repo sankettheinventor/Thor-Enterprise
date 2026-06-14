@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -200,10 +201,18 @@ class GiteaServerBackend(GitPort):
         if not signature_ref:
             return {"merged": False, "reason": "no Signature 3 — THOR has not authorized the merge"}
         name = self._prs.get(pr_id) or self._name(repo)
-        code, res = self._api("POST", f"/repos/{self.owner}/{name}/pulls/{pr_id}/merge", {"Do": "merge"})
-        if code in (200, 201):
-            _, pr = self._api("GET", f"/repos/{self.owner}/{name}/pulls/{pr_id}")
-            return {"merged": True, "sha": (pr or {}).get("merge_commit_sha")}
+        # Gitea computes PR mergeability ASYNCHRONOUSLY and returns 405 ("try again later") until it's
+        # ready — retry the transient state with backoff before failing (kills a flaky false-fail; a real
+        # conflict/auth error breaks out immediately).
+        code, res = 0, None
+        for attempt in range(6):
+            code, res = self._api("POST", f"/repos/{self.owner}/{name}/pulls/{pr_id}/merge", {"Do": "merge"})
+            if code in (200, 201):
+                _, pr = self._api("GET", f"/repos/{self.owner}/{name}/pulls/{pr_id}")
+                return {"merged": True, "sha": (pr or {}).get("merge_commit_sha")}
+            if code not in (405, 409, 500, 502, 503):   # not a transient 'try again later' → real failure
+                break
+            time.sleep(0.5 * (attempt + 1))
         return {"merged": False, "reason": f"gitea merge HTTP {code}: {str(res)[:120]}"}
 
     def list_issues(self, repo: str) -> list[dict]:
