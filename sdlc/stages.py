@@ -326,11 +326,17 @@ class QAStage(Stage):
                 "independent": qa_room_id != build_room_id}
 
     def _run(self, repo, rel):
+        # QA runs the cook's planned test AND edge tests that import+call the cook's code — untrusted code.
+        # With a real cook in play it runs SEALED (no host, no secrets, no network), same as the verdict;
+        # the docker-free gated suite (trusted fixtures) uses a minimal-env host subprocess.
         if not rel or not os.path.exists(os.path.join(repo, rel)):
             return 1, "no test"
-        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        from govengine import reality
+        if reality._use_sandbox():
+            rc, out, _ = reality.sandboxed_run(repo, ["python3", rel])
+            return rc, out
         p = subprocess.run(["python3", os.path.join(repo, rel)], capture_output=True, text=True,
-                           cwd=repo, env=env, timeout=30)
+                           cwd=repo, env=reality._minimal_env(), timeout=30)
         return p.returncode, p.stdout + p.stderr
 
     # A MATRIX of edge inputs (not just zeros): empty/boundary values that trip un-handled cases.
