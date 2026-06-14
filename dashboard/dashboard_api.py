@@ -19,15 +19,33 @@ from thor_http_auth import rate_limit, require_token
 app = FastAPI(title="THOR DashboardAPI", version="0.1.0")
 
 
+# Security response headers. frame-ancestors/X-Frame-Options:DENY stop the cockpit (esp. the Sign button —
+# the operator signature is the ultimate authority) from being framed for CLICKJACKING; the CSP contains any
+# XSS (defense-in-depth on top of React's escaping); nosniff/Referrer-Policy are standard hardening. The CSP
+# allows exactly what the cockpit needs (self bundle, inline styles, Google Fonts, same-origin SSE).
+_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
+        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'")
+_SEC_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "no-referrer", "Content-Security-Policy": _CSP,
+                "Permissions-Policy": "geolocation=(), microphone=(), camera=()"}
+
+
+def _harden(resp):
+    for k, v in _SEC_HEADERS.items():
+        resp.headers.setdefault(k, v)
+    return resp
+
+
 @app.middleware("http")
-async def _rate_limit_middleware(request: Request, call_next):
-    """Per-client rate limit on the MUTATING surface (POST/PUT/DELETE/PATCH) — one place, all endpoints."""
+async def _security_middleware(request: Request, call_next):
+    """Per-client rate limit on the MUTATING surface + security response headers on EVERY response."""
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
         try:
             rate_limit(request)
         except HTTPException as exc:
-            return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
-    return await call_next(request)
+            return _harden(JSONResponse({"detail": exc.detail}, status_code=exc.status_code))
+    return _harden(await call_next(request))
 
 # Allow-list for any client-supplied identifier (feature_id / command). Positive validation (invariant #7):
 # blocks path traversal, shell metacharacters, refspec tricks, and unbounded-input DoS at the edge.
