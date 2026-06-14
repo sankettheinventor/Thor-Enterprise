@@ -46,6 +46,20 @@ def sandboxed_run(repo: str, argv: list[str], *, timeout: int = 30, prepare=None
     import docker as _docker
 
     from wall import config
+    # Disk-fill guard: refuse to COPY a worktree bigger than the cap (a cook that filled /work could
+    # otherwise double the bloat into the sandbox temp and exhaust the host). Early-exit once over the cap.
+    cap = int(os.environ.get("THOR_VERIFY_MAX_MB", "1024")) * 1024 * 1024
+    total = 0
+    for root, _dirs, files in os.walk(repo):
+        if os.path.basename(root) == ".git":
+            continue
+        for fn in files:
+            try:
+                total += os.path.getsize(os.path.join(root, fn))
+            except OSError:
+                pass
+        if total > cap:
+            return 1, f"worktree exceeds the {cap // (1024 * 1024)}MB verification cap (possible disk-fill)", None
     work = tempfile.mkdtemp(prefix="thor-verify-")
     dst = os.path.join(work, "r")
     container = None

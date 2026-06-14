@@ -142,6 +142,11 @@ def boot() -> list[tuple[object, int]]:
         manager.register_operator(_pub)
     if manager.authorized_signers:
         print(f"[thor] Identity  {len(manager.authorized_signers)} operator key(s) registered from boot config")
+    # Supply-chain nudge: a mutable image tag can be swapped at the registry — pin by digest in production.
+    from wall import config as _img_cfg
+    if "@sha256:" not in _img_cfg.ROOM_IMAGE:
+        print(f"[thor] WARN     room image '{_img_cfg.ROOM_IMAGE}' is a MUTABLE tag — pin by digest "
+              f"(THOR_ROOM_IMAGE=name@sha256:…) in production to prevent a swapped image")
     # M1: crash-replay has a REAL caller now. On every boot the Manager rebuilds its projections
     # (rooms/cards/features) purely by replaying the durable signed EventLog — so a crash that lost
     # the projection tables (but kept the ledger) recovers to exact state. (FR-13 / AC-3.)
