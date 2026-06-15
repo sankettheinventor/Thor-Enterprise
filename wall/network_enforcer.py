@@ -75,27 +75,73 @@ GATEWAY_NAME = "thor-leash-gateway"   # the dual-homed gateway (must match leash
 GATEWAY_PORT = 8001
 
 
-def egress_proxy_env() -> dict:
-    """Env that forces a one-door room's HTTP(S) egress through the governed gateway — the ONLY door.
-    The room has no other route (internal net), so even an agent that ignores these vars cannot reach
+def _sanitize_suffix(suffix: str) -> str:
+    """A docker-name-safe key (room_id/feature_id ride in from the request). Empty -> the shared default
+    names (backward compatible). Bounded + alnum-only so a hostile feature_id can't inject a name."""
+    import re
+    return re.sub(r"[^A-Za-z0-9]", "", suffix or "")[:40]
+
+
+def room_net(suffix: str = "") -> str:
+    """Per-cook internal room network (no internet). Keyed by the request's room_id/feature_id so two
+    cooks NEVER share a net — true parallel isolation, not a global lock. Empty -> the shared default."""
+    s = _sanitize_suffix(suffix)
+    return f"{ROOM_NET}-{s}" if s else ROOM_NET
+
+
+def gateway_name(suffix: str = "") -> str:
+    """Per-cook governed gateway name (one door per cook). Empty -> the shared default."""
+    s = _sanitize_suffix(suffix)
+    return f"{GATEWAY_NAME}-{s}" if s else GATEWAY_NAME
+
+
+def egress_proxy_env(suffix: str = "") -> dict:
+    """Env that forces a one-door room's HTTP(S) egress through THIS cook's governed gateway — its ONLY
+    door. The room has no other route (internal net), so even an agent that ignores these vars cannot reach
     the internet; setting them makes well-behaved clients (curl, Claude Code, ...) use the door cleanly."""
-    proxy = f"http://{GATEWAY_NAME}:{GATEWAY_PORT}"
+    proxy = f"http://{gateway_name(suffix)}:{GATEWAY_PORT}"
     return {"HTTP_PROXY": proxy, "HTTPS_PROXY": proxy,
             "http_proxy": proxy, "https_proxy": proxy, "NO_PROXY": "localhost,127.0.0.1"}
 
 
-def ensure_networks(client) -> None:
-    """Create the internal room network + the egress network if absent. Idempotent."""
+def _create_net(client, name: str, *, internal: bool) -> None:
+    """Create a network if absent, tolerating a concurrent create. With parallel cooks two threads can both
+    see a net as absent and both POST create -> Docker returns 409 'already exists' for the loser; that is a
+    SUCCESS for us (the net exists), so we swallow exactly that race and re-raise anything else."""
+    import docker
+    try:
+        client.networks.create(name, driver="bridge", internal=internal)
+    except docker.errors.APIError as e:
+        if "already exists" not in str(e).lower():
+            raise
+
+
+def ensure_networks(client, suffix: str = "") -> None:
+    """Create THIS cook's internal room network + the SHARED egress network if absent. Idempotent and
+    race-safe (parallel cooks). The room-net is per-cook (isolated); the egress-net is shared (it is the
+    outside-facing side, and each gateway is still the only bridge for ITS own room-net — rooms cannot see
+    each other)."""
     existing = {n.name for n in client.networks.list()}
-    if ROOM_NET not in existing:
-        client.networks.create(ROOM_NET, driver="bridge", internal=True)
+    rn = room_net(suffix)
+    if rn not in existing:
+        _create_net(client, rn, internal=True)
     if EGRESS_NET not in existing:
-        client.networks.create(EGRESS_NET, driver="bridge", internal=False)
+        _create_net(client, EGRESS_NET, internal=False)
 
 
-def one_door_room_kwargs() -> dict:
-    """docker-run kwargs for a GOVERNED room: attached only to the internal (no-internet) net."""
-    return {"network": ROOM_NET}
+def remove_room_net(client, suffix: str = "") -> None:
+    """Tear down a per-cook room network (no-op for the shared default / if still in use)."""
+    if not _sanitize_suffix(suffix):
+        return
+    try:
+        client.networks.get(room_net(suffix)).remove()
+    except Exception:  # noqa: BLE001 — already gone / still attached → leave it
+        pass
+
+
+def one_door_room_kwargs(suffix: str = "") -> dict:
+    """docker-run kwargs for a GOVERNED room: attached only to THIS cook's internal (no-internet) net."""
+    return {"network": room_net(suffix)}
 
 
 def assert_no_internet(container) -> bool:

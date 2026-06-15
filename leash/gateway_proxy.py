@@ -40,25 +40,43 @@ def _allowlisted(host: str) -> bool:
     return host in ALLOWLIST or any(host == a or host.endswith("." + a) for a in ALLOWLIST)
 
 
-def _safe_ip(host: str) -> str | None:
-    """SSRF / DNS-rebinding guard. Resolve ONCE and return a single PUBLIC IP to connect to, or None if the
-    host resolves to ANY private/loopback/link-local/reserved/multicast address. The caller connects to the
-    RETURNED IP — so the allowlist check and the actual connection use the SAME validated address, closing
-    the classic resolve-then-connect TOCTOU (a rebind can't swap in an internal IP after the check)."""
-    try:
-        infos = socket.getaddrinfo(host, None)
-    except OSError:
-        return None
+def _resolve_safe(host: str) -> tuple[str | None, str]:
+    """SSRF / DNS-rebinding guard. Resolve and return (single PUBLIC IP to connect to, reason). The caller
+    connects to the RETURNED IP — so the allowlist check and the actual connection use the SAME validated
+    address, closing the classic resolve-then-connect TOCTOU (a rebind can't swap in an internal IP after).
+
+    reason is one of:
+      "ok"      — ip is a public address, safe to connect.
+      "private" — host resolves to a private/loopback/link-local/reserved/multicast address (SSRF) -> DENY.
+      "dnsfail" — the resolver could not answer even after retries. This is OPERATIONAL, not an attack: a
+                  transient resolver hiccup on a freshly dual-homed gateway under parallel cold-start must
+                  NOT turn an allowlisted host into a hard security denial (it would also wrongly inflate
+                  exfiltration detection). We retry a few times, then surface it as an error (502), not a deny.
+    """
+    infos = None
+    for attempt in range(_DNS_TRIES):
+        try:
+            infos = socket.getaddrinfo(host, None)
+            break
+        except OSError:
+            if attempt < _DNS_TRIES - 1:
+                time.sleep(_DNS_BACKOFF)
+    if infos is None:
+        return None, "dnsfail"
     chosen = None
     for info in infos:
         try:
             ip = ipaddress.ip_address(info[4][0])
         except ValueError:
-            return None
+            return None, "private"
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            return None
+            return None, "private"
         chosen = chosen or info[4][0]
-    return chosen
+    return chosen, "ok"
+
+
+_DNS_TRIES = int(os.environ.get("LEASH_DNS_TRIES", "4"))
+_DNS_BACKOFF = float(os.environ.get("LEASH_DNS_BACKOFF", "0.3"))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -73,10 +91,20 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(403)
             self.end_headers()
             return
-        pinned = _safe_ip(host)
-        if not _allowlisted(host) or pinned is None:
-            _record("deny", host, "egress CONNECT not allowlisted or resolves to a private IP (Layer B)")
+        if not _allowlisted(host):
+            _record("deny", host, "egress CONNECT not allowlisted (Layer B)")
             self.send_response(403)
+            self.end_headers()
+            return
+        pinned, reason = _resolve_safe(host)
+        if reason == "private":
+            _record("deny", host, "egress CONNECT resolves to a private/reserved IP (SSRF, Layer B)")
+            self.send_response(403)
+            self.end_headers()
+            return
+        if pinned is None:   # allowlisted but transiently unresolvable — operational, not a security deny
+            _record("error", host, "DNS resolution failed for an allowlisted host after retries")
+            self.send_response(502)
             self.end_headers()
             return
         _record("allow", host, "allowlisted CONNECT")
@@ -118,11 +146,24 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):  # forward-proxy: self.path is an absolute URL
         host = urlparse(self.path).hostname or ""
-        if not _allowlisted(host) or _safe_ip(host) is None:
-            _record("deny", host, "egress destination not allowlisted or resolves to a private IP (Layer B)")
+        if not _allowlisted(host):
+            _record("deny", host, "egress destination not allowlisted (Layer B)")
             self.send_response(403)
             self.end_headers()
             self.wfile.write(f"GovernanceDenied: egress to {host} not allowed".encode())
+            return
+        _, reason = _resolve_safe(host)
+        if reason == "private":
+            _record("deny", host, "egress destination resolves to a private/reserved IP (SSRF, Layer B)")
+            self.send_response(403)
+            self.end_headers()
+            self.wfile.write(f"GovernanceDenied: egress to {host} not allowed".encode())
+            return
+        if reason == "dnsfail":   # allowlisted but transiently unresolvable — operational, not a deny
+            _record("error", host, "DNS resolution failed for an allowlisted host after retries")
+            self.send_response(502)
+            self.end_headers()
+            self.wfile.write(b"UpstreamResolutionFailed")
             return
         _record("allow", host, "allowlisted")
         # The upstream credential is NEVER attached to a cook-named plaintext request — that would hand the

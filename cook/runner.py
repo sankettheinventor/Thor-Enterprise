@@ -16,15 +16,15 @@ from __future__ import annotations
 
 import os
 import tempfile
-import threading
+import uuid
 
 from .runtime import CookRuntime, select_runtime
 
-# The one-door gateway is a process-global singleton (one name, one allowlist). Two cooks starting it
-# concurrently would swap the allowlist out from under each other (AUD-gateway-singleton). Serialize the
-# whole one-door build under this lock and tear the gateway down after, so each cook gets EXACTLY its
-# allowlist and no gateway leaks. (Single-host control plane → a process lock is sufficient.)
-_ONE_DOOR_LOCK = threading.Lock()
+# Parallel cooks (no lock): every request already carries a room_id/feature_id, so each one-door build gets
+# its OWN gateway + its OWN internal room-net keyed by that id (thor-leash-gateway-<id> on thor-room-net-<id>).
+# Two cooks therefore NEVER share a gateway or a net — each is behind its own door with EXACTLY its own
+# allowlist, fully isolated, with no global singleton to swap out from under it. True parallel by isolation,
+# not by serialization. (Replaces the former _ONE_DOOR_LOCK.)
 
 
 class CookRunner:
@@ -48,39 +48,48 @@ class CookRunner:
         if network_mode is None:
             network_mode = "one_door" if allowlist else "sealed"   # C1: a cook that needs its model gets one door
         if network_mode == "one_door":
-            with _ONE_DOOR_LOCK:                 # AUD-gateway-singleton: one cook owns the gateway at a time
-                self._start_gateway(allowlist)
-                try:
-                    return self._provision_and_exec(feature_slice, worktree_host_path, network_mode)
-                finally:
-                    self._teardown_gateway()     # no leak, and the next cook starts fresh with ITS allowlist
+            suffix = self._suffix(feature_slice)     # per-cook gateway+net key (room_id/feature_id from the request)
+            self._start_gateway(allowlist, suffix)
+            try:
+                return self._provision_and_exec(feature_slice, worktree_host_path, network_mode, suffix)
+            finally:
+                self._teardown_gateway(suffix)       # tears down ONLY this cook's door + net; peers untouched
         return self._provision_and_exec(feature_slice, worktree_host_path, network_mode)
 
-    def _provision_and_exec(self, feature_slice: dict, worktree_host_path: str, network_mode: str) -> dict:
+    @staticmethod
+    def _suffix(feature_slice: dict) -> str:
+        """Per-cook isolation key: the feature_id from the request (every request has one). Fall back to a
+        fresh unique id so even an id-less slice gets its own door rather than colliding on the default."""
+        fid = (feature_slice or {}).get("feature_id")
+        return str(fid) if fid else uuid.uuid4().hex[:12]
+
+    def _provision_and_exec(self, feature_slice: dict, worktree_host_path: str, network_mode: str,
+                            suffix: str = "") -> dict:
         prov = self._prov or _provisioner()
         room = prov.provision_room(
             task_type="build", feature_slice=feature_slice, worktree_host_path=worktree_host_path,
-            network_mode=network_mode, extra_env=self.runtime.env(), image=self.runtime.image())
+            network_mode=network_mode, extra_env=self.runtime.env(), image=self.runtime.image(),
+            net_suffix=suffix)
         container = _docker().containers.get(room["room_id"])
         res = container.exec_run(self.runtime.command(feature_slice), user="cook", workdir="/work")
         out = (res.output or b"")
         return {"room_id": room["room_id"], "exit_code": res.exit_code, "network_mode": network_mode,
                 "output": out.decode("utf-8", "replace")[-4000:], "_mount_plan": room.get("_mount_plan")}
 
-    def _start_gateway(self, allowlist) -> None:
-        """Start the governed one-door gateway allowlisting exactly the cook's model hosts. THOR injects no
+    def _start_gateway(self, allowlist, suffix: str = "") -> None:
+        """Start THIS cook's governed one-door gateway allowlisting exactly its model hosts. THOR injects no
         model-host secret — the cook's OWN credential (its env, COOK.md) rides inside TLS; the gateway only
-        do_CONNECT-tunnels the allowlisted host."""
+        do_CONNECT-tunnels the allowlisted host. Keyed by `suffix` so parallel cooks never collide."""
         from leash import gateway
         leash_host_path = os.path.dirname(os.path.abspath(gateway.__file__))
         gateway.start_gateway(_docker(), leash_host_path=leash_host_path,
                               decision_log_dir=os.path.join(tempfile.gettempdir(), "thor-leash"),
-                              allowlist=tuple(allowlist))
+                              allowlist=tuple(allowlist), suffix=suffix)
 
-    def _teardown_gateway(self) -> None:
+    def _teardown_gateway(self, suffix: str = "") -> None:
         try:
             from leash import gateway
-            gateway.teardown(_docker())
+            gateway.teardown(_docker(), suffix=suffix)
         except Exception:  # noqa: BLE001 — best-effort teardown; never mask the build result
             pass
 

@@ -66,10 +66,23 @@ counted. Signatures are an **allow-list of known shapes**; new shapes are added 
 8. **Documented threat model** — this file.
 
 ## Egress isolation (defense in depth, kernel + userspace)
-The room sits on `thor-room-net` created **`internal=True`** — Docker installs the kernel iptables rules that
-give it **no route to the internet at all**; only the dual-homed gateway bridges to `thor-egress-net`. So the
-**L3 backstop is the network topology** (the cook cannot reach the internet even if the proxy were bypassed),
-and the gateway's IP-pinned, :443-only, SSRF-guarded allowlist is the **L7** layer on top.
+The room sits on a **per-cook** `thor-room-net-<id>` created **`internal=True`** — Docker installs the kernel
+iptables rules that give it **no route to the internet at all**; only that cook's own dual-homed gateway
+(`thor-leash-gateway-<id>`) bridges it to the shared `thor-egress-net`. So the **L3 backstop is the network
+topology** (the cook cannot reach the internet even if the proxy were bypassed), and the gateway's IP-pinned,
+:443-only, SSRF-guarded allowlist is the **L7** layer on top.
+
+## Parallel cooks (per-room isolation, no shared singleton)
+Every request already carries a `room_id`/`feature_id`, so each one-door cook gets its OWN gateway on its OWN
+internal room-net keyed by that id. Two real cooks therefore run **truly in parallel**, each behind its own
+door enforcing **exactly its own allowlist** — there is no shared gateway to swap allowlists out from under a
+peer, and **no global serialization lock**. Inter-room lateral movement stays architecturally prevented: a
+cook's room-net is private to that cook (the shared egress-net is outside-facing only, and each gateway is the
+sole bridge for its own room-net). The resolver retries transient DNS failures so a cold-start hiccup never
+turns an allowlisted host into a spurious egress deny (which would also wrongly inflate exfiltration
+detection) — an unresolvable allowlisted host is an operational 502, distinct from a security deny. Proven:
+`tools/qa/prove_parallel_cooks.py` (two concurrent cooks, each reaches only its own host, blocked from the
+peer's, both gateways alive simultaneously).
 
 ## Hardening added this pass
 - **Secret files** owner-only (`0600`/`0700`): the Ed25519 signing key and the VAPID key.
@@ -77,4 +90,4 @@ and the gateway's IP-pinned, :443-only, SSRF-guarded allowlist is the **L7** lay
 - **Threat thresholds** are per-deployment tunable (`THOR_THREAT_SCOPE`/`_EGRESS`/`_FORGERY`).
 
 ## Honest residuals (tracked in `GAP-AND-RISK-REGISTER.md`)
-Single-host / single-commander (no RBAC, no k8s fleet); non-Python work escalates to a human (no mechanical coverage); detection is **static-threshold rules** (tunable), not a learned baseline (no ML anomaly model yet); the during-build `/work` disk cap needs an FS-level quota at deploy (the verification sandbox is already capped). Inter-room lateral movement is **architecturally prevented** today (sealed rooms have NO network; one-door rooms share `thor-room-net` but are serialized one-at-a-time) — per-room networks remain the k8s-era hardening. None are silent — each is a register row.
+Single-host / single-commander (no RBAC yet, no k8s fleet); non-Python work escalates to a human (no mechanical coverage); detection is **static-threshold rules** (tunable), not a learned baseline (no ML anomaly model yet); the during-build `/work` disk cap needs an FS-level quota at deploy (the verification sandbox is already capped). Inter-room lateral movement is **architecturally prevented** today: sealed rooms have NO network, and one-door rooms now sit on **per-cook internal nets** (each cook's own gateway is the sole bridge — rooms cannot see each other), so parallel cooks are isolated without serialization. None are silent — each is a register row.

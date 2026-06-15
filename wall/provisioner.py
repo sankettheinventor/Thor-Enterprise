@@ -60,6 +60,7 @@ def provision_room(
     network_mode: str = "sealed",
     extra_env: dict | None = None,
     image: str | None = None,
+    net_suffix: str = "",
 ) -> dict:
     """
     Create one room and return its descriptor (PRD §6.1 provision response shape).
@@ -94,9 +95,9 @@ def provision_room(
 
     # 1.3 Network Enforcer — sealed shut (M1) or one-door internal net (M2 Phase 2b).
     if network_mode == "one_door":
-        network_enforcer.ensure_networks(client)
-        net_kwargs = network_enforcer.one_door_room_kwargs()
-        proxy_env = network_enforcer.egress_proxy_env()   # route egress through the governed gateway
+        network_enforcer.ensure_networks(client, net_suffix)
+        net_kwargs = network_enforcer.one_door_room_kwargs(net_suffix)
+        proxy_env = network_enforcer.egress_proxy_env(net_suffix)   # egress through THIS cook's door
     else:
         net_kwargs = network_enforcer.network_kwargs(room_id)
         proxy_env = {}
