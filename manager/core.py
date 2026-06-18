@@ -48,7 +48,8 @@ class ThorManager:
         self.identity = identity or MeshIdentity(self.stamper)                    # swappable IdentityPort
         self._eventlog_writable = True   # toggled to demonstrate fail-closed (AC-7)
         self.sentinel = None             # attached at boot; the Coordinator escalates caught lies to it
-        self.authorized_signers: set[str] = set()   # T7: only these Ed25519 keys may sign cards
+        self.authorized_signers: set[str] = set()   # T7: only these Ed25519 keys may sign cards (COMMANDERS)
+        self.user_roles: dict[str, str] = {}         # RBAC: pubkey -> role (commander/operator/viewer)
         self._challenges: dict[str, str] = {}        # T7: one-time per-card nonces (replay defence)
 
     def attach_sentinel(self, sentinel) -> None:
@@ -59,8 +60,23 @@ class ThorManager:
     def register_operator(self, pub_b64: str) -> None:
         """Register an authorized signer. Use at BOOT (from THOR_OPERATOR_PUBKEYS) or to bootstrap the
         FIRST operator. After one operator exists, a NEW key must be added via `register_operator_signed`
-        — a transport token alone must NOT mint signing authority (AUD-register-authority)."""
+        — a transport token alone must NOT mint signing authority (AUD-register-authority). A bare operator
+        registration is a COMMANDER (the merge-signing authority); RBAC users come in via `register_user`."""
         self.authorized_signers.add(pub_b64)
+        self.user_roles[pub_b64] = "commander"
+
+    def register_user(self, user_id: str, role: str, pub_b64: str) -> None:
+        """RBAC: bind an Ed25519 key to a role. ONLY a COMMANDER's key enters `authorized_signers`, so only
+        a commander can ever sign a merge — an operator/viewer key is a known identity with NO merge
+        authority, even though its holder's TOKEN can drive the build flow (transport authZ is separate).
+        Used at boot from THOR_USERS; an operator/viewer key registered here is removed from the signer set
+        if it was somehow present (defence-in-depth against a mis-seeded roster)."""
+        if pub_b64:
+            self.user_roles[pub_b64] = role
+            if role == "commander":
+                self.authorized_signers.add(pub_b64)
+            else:
+                self.authorized_signers.discard(pub_b64)
 
     def register_operator_signed(self, new_pub_b64: str, signature_b64: str, by_pub_b64: str) -> dict:
         """Add a new operator key ONLY if an existing operator co-signed it (Ed25519 over the new key)."""

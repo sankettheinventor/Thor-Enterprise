@@ -140,8 +140,19 @@ def boot() -> list[tuple[object, int]]:
     # sign; a new key afterwards needs an existing operator's co-signature (AUD-register-authority).
     for _pub in (p.strip() for p in os.environ.get("THOR_OPERATOR_PUBKEYS", "").split(",") if p.strip()):
         manager.register_operator(_pub)
+    # RBAC: bind each configured user's Ed25519 key to its role (THOR_USERS). Only commander keys gain merge
+    # authority; operator/viewer keys are known identities with NO signing power (their TOKEN drives the flow,
+    # role-gated at the HTTP edge). authN ≠ authZ: a token can never mint a merge — that needs a commander key.
+    import rbac
+    _users = rbac.load_users()
+    for _u in _users:
+        manager.register_user(_u["id"], _u["role"], _u.get("pubkey", ""))
     if manager.authorized_signers:
-        print(f"[thor] Identity  {len(manager.authorized_signers)} operator key(s) registered from boot config")
+        print(f"[thor] Identity  {len(manager.authorized_signers)} commander key(s) registered from boot config")
+    if _users:
+        from collections import Counter
+        _by = Counter(u["role"] for u in _users)
+        print(f"[thor] RBAC      {len(_users)} user(s): " + ", ".join(f"{n} {r}" for r, n in sorted(_by.items())))
     # Supply-chain nudge: a mutable image tag can be swapped at the registry — pin by digest in production.
     from wall import config as _img_cfg
     if "@sha256:" not in _img_cfg.ROOM_IMAGE:

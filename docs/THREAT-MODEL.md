@@ -84,10 +84,26 @@ detection) — an unresolvable allowlisted host is an operational 502, distinct 
 `tools/qa/prove_parallel_cooks.py` (two concurrent cooks, each reaches only its own host, blocked from the
 peer's, both gateways alive simultaneously).
 
+## RBAC — multiple users on one host (authN ≠ authZ, two layers)
+Three rank-ordered roles — **viewer** (read-only) < **operator** (run the SDLC flow: queue/stop features, run
+commands) < **commander** (the authority surface: approve/reject cards, register users). Each user carries a
+**per-user API token** AND a **per-user Ed25519 key**, and the two never blur:
+- **Transport (authN + coarse authZ)** — the token proves *who* is calling and gates the mutating surface by
+  role at the HTTP edge (`thor_http_auth.require_role`): a Viewer's token can't mutate (403), an Operator's
+  can't reach `/approve` (403), only a Commander's reaches the authority surface. A bad/absent token is 401.
+- **Authority (the real authZ)** — a merge is minted ONLY by an Ed25519 signature, and now ONLY a
+  **commander's** registered key may sign one (`Manager.authorized_signers` holds commander keys only;
+  registering a key as operator/viewer *removes* it from the signer set). A token — any token, even a
+  Commander's — can NEVER mint a merge; that takes the offline signing key.
+
+Config is env-driven like the rest (`THOR_USERS` = JSON `[{id, role, token, pubkey}]`); when unset the legacy
+single-token/open posture applies, so `make qa`/`make prove` (no token) pass unchanged. Proven:
+`tests/test_rbac.py` (fast lane) + `tools/qa/prove_rbac.py` (both layers, three roles).
+
 ## Hardening added this pass
 - **Secret files** owner-only (`0600`/`0700`): the Ed25519 signing key and the VAPID key.
 - **Rate limit** (sliding window, per client) on the mutating surface — bounds brute-force / abuse (429); tune via `THOR_RL_MAX`/`THOR_RL_WINDOW`.
 - **Threat thresholds** are per-deployment tunable (`THOR_THREAT_SCOPE`/`_EGRESS`/`_FORGERY`).
 
 ## Honest residuals (tracked in `GAP-AND-RISK-REGISTER.md`)
-Single-host / single-commander (no RBAC yet, no k8s fleet); non-Python work escalates to a human (no mechanical coverage); detection is **static-threshold rules** (tunable), not a learned baseline (no ML anomaly model yet); the during-build `/work` disk cap needs an FS-level quota at deploy (the verification sandbox is already capped). Inter-room lateral movement is **architecturally prevented** today: sealed rooms have NO network, and one-door rooms now sit on **per-cook internal nets** (each cook's own gateway is the sole bridge — rooms cannot see each other), so parallel cooks are isolated without serialization. None are silent — each is a register row.
+Single-host (no k8s fleet — RBAC for multiple users on one host is now CLOSED, see below); non-Python work escalates to a human (no mechanical coverage); detection is **static-threshold rules** (tunable), not a learned baseline (no ML anomaly model yet); the during-build `/work` disk cap needs an FS-level quota at deploy (the verification sandbox is already capped). Inter-room lateral movement is **architecturally prevented** today: sealed rooms have NO network, and one-door rooms now sit on **per-cook internal nets** (each cook's own gateway is the sole bridge — rooms cannot see each other), so parallel cooks are isolated without serialization. None are silent — each is a register row.

@@ -14,9 +14,15 @@ from fastapi import Depends, FastAPI, HTTPException, Path, Request
 from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from thor_http_auth import rate_limit, require_token
+from rbac import COMMANDER, OPERATOR
+from thor_http_auth import rate_limit, require_role
 
 app = FastAPI(title="THOR DashboardAPI", version="0.1.0")
+
+# RBAC transport gates (coarse authZ by role; merge AUTHORITY is the commander Ed25519 signature, separate).
+# When THOR_USERS is unset these fall back to the legacy single-token / open posture — dev/test unaffected.
+_operator = require_role(OPERATOR)     # run the SDLC flow: queue/stop features, run commands
+_commander = require_role(COMMANDER)   # the authority surface: approve/reject cards, register users
 
 
 # Security response headers. frame-ancestors/X-Frame-Options:DENY stop the cockpit (esp. the Sign button —
@@ -199,25 +205,25 @@ async def stream():
 
 
 @app.post("/features")
-def add_feature(f: FeatureIn, _: None = Depends(require_token)):
+def add_feature(f: FeatureIn, _user=Depends(_operator)):
     return {"feature_id": _service.add_feature(f.title, f.context, f.priority)}
 
 
 @app.delete("/features/{feature_id}")
-def remove_feature(feature_id: str = Path(pattern=_IDPAT), _: None = Depends(require_token)):
+def remove_feature(feature_id: str = Path(pattern=_IDPAT), _user=Depends(_operator)):
     """Remove a feature from the catalog (event-sourced; the ledger keeps the history)."""
     _service.manager.remove_feature(feature_id)
     return {"ok": True, "removed": feature_id}
 
 
 @app.post("/features/{feature_id}/stop")
-def stop_feature(feature_id: str = Path(pattern=_IDPAT), _: None = Depends(require_token)):
+def stop_feature(feature_id: str = Path(pattern=_IDPAT), _user=Depends(_operator)):
     """Stop work on a task: destroy its active room and move it back to 'ready' (branch + ledger kept)."""
     return _service.stop_feature(feature_id)
 
 
 @app.post("/operator/register")
-def register_operator(k: OperatorKey, _: None = Depends(require_token)):
+def register_operator(k: OperatorKey, _user=Depends(_commander)):
     """Register an authorized signer. The transport token alone must NOT mint signing authority
     (AUD-register-authority): the FIRST operator is a token-gated trust-on-first-use bootstrap; every
     operator after that must be CO-SIGNED by an existing operator (Ed25519 over the new key)."""
@@ -245,12 +251,12 @@ def challenge(card_id: str):
 
 
 @app.post("/approve")
-def approve(s: Sig, _: None = Depends(require_token)):
+def approve(s: Sig, _user=Depends(_commander)):
     return _service.approve(s.card_id, s.signature, s.signer_pub, s.nonce)
 
 
 @app.post("/reject")
-def reject(s: Sig, _: None = Depends(require_token)):
+def reject(s: Sig, _user=Depends(_commander)):
     return _service.reject(s.card_id, s.signature, s.signer_pub, s.nonce, s.reason)
 
 
@@ -261,7 +267,7 @@ class CmdIn(BaseModel):
 
 @app.post("/commands/{command}")
 def run_command(command: str = Path(pattern=r"^[a-z_]{1,32}$"), c: CmdIn = ...,
-                _: None = Depends(require_token)):
+                _user=Depends(_operator)):
     """Phone command parity — but ONLY the bounded allowlist (Module 9.5: the most-exposed device gets
     the least catastrophic power). Anything outside the allowlist is refused; reaching into a room or
     bypassing governance is impossible from here by design."""
@@ -298,7 +304,7 @@ def push_subscribe(sub: PushSub):
 
 
 @app.post("/push/test")
-def push_test(_: None = Depends(require_token)):
+def push_test(_user=Depends(_operator)):
     """Send a THOR-styled test notification to all subscribed devices."""
     from dashboard import push
     return push.send("THOR", "Your cockpit is connected — notifications are on.", "/app/")

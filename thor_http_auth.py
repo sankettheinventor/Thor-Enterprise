@@ -59,3 +59,33 @@ def require_token(authorization: str | None = Header(default=None)) -> None:
     """FastAPI dependency for mutating endpoints: 401 unless authorized."""
     if not is_authorized(authorization):
         raise HTTPException(status_code=401, detail="missing or invalid API token")
+
+
+def require_role(min_role: str):
+    """Build a FastAPI dependency that enforces a per-user ROLE on a mutating endpoint.
+
+    Three postures, by configuration:
+      * RBAC on  (THOR_USERS set): resolve the bearer token to a user; 401 if no user matches, 403 if the
+        user's role rank is below `min_role`. Returns the user dict (so handlers can audit WHO acted).
+      * single-token (THOR_API_TOKEN set, no THOR_USERS): the legacy posture — a valid token is full access
+        (treated as commander). 401 if the token is missing/invalid.
+      * open (neither set): dev/test/CI — no gate (so `make qa`/`make prove`, which send no token, pass).
+    The transport role is the COARSE gate; minting a merge still needs a COMMANDER Ed25519 signature that no
+    token can produce (authority is enforced separately in the Manager)."""
+    import rbac
+
+    def _dep(authorization: str | None = Header(default=None)):
+        if rbac.rbac_enabled():
+            user = rbac.user_for_token(authorization)
+            if user is None:
+                raise HTTPException(status_code=401, detail="missing or invalid API token")
+            if not rbac.role_at_least(user["role"], min_role):
+                raise HTTPException(status_code=403,
+                                    detail=f"role '{user['role']}' may not perform this action "
+                                           f"(requires {min_role})")
+            return user
+        if not is_authorized(authorization):       # legacy single-token / open posture
+            raise HTTPException(status_code=401, detail="missing or invalid API token")
+        return None
+
+    return _dep
