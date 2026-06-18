@@ -3,12 +3,18 @@
 **The one question:** *Can a real company point THOR at their real repository and have an AI agent build a
 real feature under governance, safely, today?*
 
-**One-line verdict:** **Production-ready** to govern an AI coding agent building a **Python** feature in a
-**single-host, single-commander** deployment — every build runs in a sealed/one-door room, every "done"
-is proven against reality, every merge carries a human Ed25519 signature, and a lying or out-of-scope
-agent is caught. **Not yet ready** for multi-tenant/RBAC teams, Kubernetes-scale room fleets, non-Python
-coverage-of-diff, or a turnkey hosted product — and the **frontier-model** cook is wired but its *live*
-run is gated on an OAuth token absent from this sandbox.
+**One-line verdict:** **Production-ready** to govern AI coding agents building a **Python** feature in a
+**single-host** deployment with a **team** (RBAC: viewer/operator/commander) — every build runs in a
+sealed/one-door room, **multiple cooks run truly in parallel** each behind its own isolated egress door,
+every "done" is proven against reality, every merge carries a **commander** Ed25519 signature, and a lying
+or out-of-scope agent is caught. **Not yet ready** for non-Python coverage-of-diff, in-flight crash-resume,
+HA/backups/observability, or a turnkey hosted product — and the **frontier-model** cook is wired but its
+*live* run is gated on an OAuth token absent from this sandbox. (Kubernetes room fleets are **de-scoped** —
+single-host is the product target.)
+
+**Update (2026-06-18):** the former "multi-tenant/RBAC" and "single-host concurrency" not-ready items are
+now **CLOSED** — RBAC (`tests/test_rbac.py`, `tools/qa/prove_rbac.py`) and parallel per-feature cooks
+(`tools/qa/prove_parallel_cooks.py`) are proven. This report's §4 table is updated accordingly.
 
 All evidence below is reproducible from a clean tree on WSL2 + Docker + Postgres. THOR does not govern its
 own build; the moat only ever gets harder.
@@ -74,19 +80,30 @@ That is the entire footprint — no THOR source change to onboard a new project.
 | Not yet | Why | Register |
 |---|---|---|
 | **Frontier-model cook, LIVE** | Wiring/egress/verdict proven with a deterministic real cook; the *live* Claude Code run needs an OAuth token absent from the sandbox. | `C2-realcook` (deferral named) |
-| **Multi-commander / RBAC** | One operator key; no per-user roles, no team auth. Single-commander only. | — (scope) |
-| **Kubernetes room fleets** | Single-host Docker siblings only; k8s rooms deferred. Concurrency bounded by one host. | — (scope) |
-| **Non-Python mechanical verification** | The anti-hollow coverage-of-diff gate is `.py`-only. Now handled **fail-closed**: a non-Python feature ESCALATES for a human signature (it can't earn an auto-`done`), but THOR still can't *mechanically* verify JS/HTML/SQL work — a human must. | `HH-nonpy-coverage` (escalates) |
+| ~~**Multi-commander / RBAC**~~ ✅ CLOSED | Three roles (viewer/operator/commander), per-user token + per-user Ed25519 key; only a commander signs merges. | `AUD-rbac-*`; `prove_rbac.py` |
+| ~~**Single-host concurrency**~~ ✅ CLOSED | Per-feature gateway + internal net — real cooks run truly in parallel, isolated, no global lock. | `AUD-gateway-singleton`; `prove_parallel_cooks.py` |
+| **Kubernetes room fleets** | **De-scoped** — single-host Docker is the product target (per the deployment decision). Surfaces run on k8s but build rooms stay on the Docker host. | — (out of scope) |
+| **In-flight crash-resume** | Projection rebuild-from-ledger on boot is proven; **resuming a build interrupted mid-flight** (re-attach worktree + continue) is not (`wall` AC-8 is skipped). A crash loses the in-progress build, not the audit chain. | `wall` AC-8 (skipped) |
+| **HA / backups / observability / CI** | Single Postgres (volume-backed, no HA/backup automation); no metrics/tracing; `make qa`/`prove`/`launch` green but not wired as an automated CI pipeline. | DEPLOYMENT.md checklist |
+| **Non-Python mechanical verification** | The anti-hollow coverage-of-diff gate is `.py`-only. Handled **fail-closed**: a non-Python feature ESCALATES for a human signature (it can't earn an auto-`done`), but THOR can't *mechanically* verify JS/HTML/SQL work — a human must. | `HH-nonpy-coverage` (escalates) |
 | **Microsoft AGT backend** | The AGT **policy gate is real and consumed by the Leash**; AGT identity/health/compliance are **representative** stubs (no Azure creds). Real AGT plugs in behind the same Strangler seam at deploy (one-line construction change). | `L1`, `M9` (representative) |
 | **Turnkey hosted product** | Operator-run control plane (RUNBOOK), not a managed SaaS; no billing/tenancy. | — (scope) |
 
 ## 5 · Verdict
 
-**Production-ready for:** a single team, single commander, governing an AI agent (deterministic today;
-frontier with a token) to build and merge **Python** features into **their own repository**, on one Docker
-host, with every action judged before it runs, every "done" proven against reality, and every merge
-human-signed.
+**Production-ready for:** a single **team** (RBAC: viewer/operator/commander), governing AI agents
+(deterministic today; frontier with a token) running **in parallel** to build and merge **Python** features
+into **their own repository**, on one Docker host (TLS-terminated, bearer/RBAC-authed), with every action
+judged before it runs, every "done" proven against reality, and every merge **commander**-signed.
 
-**Not-yet-ready for:** multi-tenant/RBAC teams, Kubernetes-scale fleets, non-Python coverage enforcement,
-a live frontier cook without an operator-supplied token, or a hosted SaaS. None of these are faked — each
-is a named, tracked register row, and the moat holds for everything inside the ready envelope.
+**Not-yet-ready for:** non-Python coverage enforcement, resume of a build interrupted mid-flight,
+HA/backups/observability/CI automation, a live frontier cook without an operator-supplied token, or a hosted
+SaaS. Kubernetes fleets are **de-scoped** (single-host is the target). None of these are faked — each is a
+named, tracked row, and the moat holds for everything inside the ready envelope.
+
+**Is it "100% production ready"?** Honestly, no — and that claim would violate truth-before-green. It is
+**production-ready within the envelope above** (now wider: RBAC teams + parallel cooks), with `make qa`
+(68/0), `make prove` (live), and `make launch` (8/8) all green. The remaining gap to "100%" is the
+not-yet-ready list — chiefly a **live frontier-cook run** (token-gated), **non-Python verification**
+(escalates safely), **in-flight crash-resume**, and **HA/backups/observability/CI**. All are tracked, none
+are hidden.
