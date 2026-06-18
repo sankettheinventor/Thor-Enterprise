@@ -43,14 +43,28 @@ def _harden(resp):
     return resp
 
 
+# Data-bearing reads that leak governance state (the audit ledger, caught lies, threats, cost, the board).
+# When RBAC is ON these require at least a VIEWER token — otherwise the 'viewer' role would be meaningless
+# (everyone could already read) and the audit/threat feed would be world-readable. Liveness (/health/system),
+# the SSE /stream (an EventSource can't send an Authorization header; it emits only ledger seq numbers), the
+# public VAPID key, and the static cockpit shell stay open so probes + the app shell still load.
+_GATED_READS = {"/state/summary", "/kanban", "/cards", "/audit/feed", "/audit/export", "/cost", "/findings",
+                "/lies", "/threats", "/rooms/activity", "/rooms/live", "/progress", "/bugs", "/commands"}
+
+
 @app.middleware("http")
 async def _security_middleware(request: Request, call_next):
-    """Per-client rate limit on the MUTATING surface + security response headers on EVERY response."""
+    """Per-client rate limit on the MUTATING surface, a VIEWER+ gate on sensitive reads when RBAC is on, and
+    security response headers on EVERY response."""
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
         try:
             rate_limit(request)
         except HTTPException as exc:
             return _harden(JSONResponse({"detail": exc.detail}, status_code=exc.status_code))
+    elif request.method == "GET" and request.url.path in _GATED_READS:
+        import rbac
+        if rbac.rbac_enabled() and rbac.user_for_token(request.headers.get("authorization")) is None:
+            return _harden(JSONResponse({"detail": "missing or invalid API token"}, status_code=401))
     return _harden(await call_next(request))
 
 # Allow-list for any client-supplied identifier (feature_id / command). Positive validation (invariant #7):

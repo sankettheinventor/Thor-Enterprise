@@ -10,7 +10,8 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
-from thor_http_auth import require_token
+from rbac import COMMANDER, OPERATOR
+from thor_http_auth import require_role
 
 from . import db
 from .core import FailClosed, ThorManager
@@ -18,6 +19,13 @@ from .pg import DSN  # noqa: F401  (documents the DSN the Manager binds to)
 
 app = FastAPI(title="THOR Manager", version="0.1.0")
 _manager: ThorManager | None = None
+
+# RBAC role gates (AUD-rbac-failopen): the Manager surface is served on :7100, so its mutating endpoints
+# must enforce the SAME roles as the dashboard — provisioning/destroying rooms is operational (operator+);
+# writing a raw ledger event is an authority-grade action (commander, the same tier as signing a merge).
+# When THOR_USERS is unset these fall back to the legacy single-token / open posture (dev/test unchanged).
+_operator = require_role(OPERATOR)
+_commander = require_role(COMMANDER)
 
 
 def manager() -> ThorManager:
@@ -46,7 +54,7 @@ class EventReq(BaseModel):
 
 
 @app.post("/rooms/provision")
-def provision(req: ProvisionReq, _: None = Depends(require_token)):
+def provision(req: ProvisionReq, _user=Depends(_operator)):
     try:
         room = manager().provision_room(req.feature_id, req.task_type, network_mode=req.network_mode)
     except ValueError as e:
@@ -55,12 +63,12 @@ def provision(req: ProvisionReq, _: None = Depends(require_token)):
 
 
 @app.post("/rooms/{room_id}/destroy")
-def destroy(room_id: str, _: None = Depends(require_token)):
+def destroy(room_id: str, _user=Depends(_operator)):
     return manager().destroy_room(room_id)
 
 
 @app.post("/events/append")
-def append_event(req: EventReq, _: None = Depends(require_token)):
+def append_event(req: EventReq, _user=Depends(_commander)):
     try:
         return manager()._record(req.event_type, req.payload, actor=req.actor,
                                  room_id=req.room_id, feature_id=req.feature_id, client_id=req.client_id)

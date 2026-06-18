@@ -6,7 +6,10 @@ The smoke drives the core in-process; this is the service shape for the real con
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+
+from rbac import OPERATOR
+from thor_http_auth import require_role
 from pydantic import BaseModel
 
 from .core import Scheduler
@@ -41,13 +44,13 @@ def _sched(req: PlanReq) -> Scheduler:
 
 
 @app.post("/schedule/plan")
-def plan(req: PlanReq):
+def plan(req: PlanReq, _user=Depends(require_role(OPERATOR))):
     s = _sched(req)
     return {"waves": s.plan().waves, "levels": s.graph.levels}
 
 
 @app.post("/schedule/dry_run")
-def dry_run(req: PlanReq):
+def dry_run(req: PlanReq, _user=Depends(require_role(OPERATOR))):
     return _sched(req).dry_run()
 
 

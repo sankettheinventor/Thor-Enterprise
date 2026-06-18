@@ -51,6 +51,9 @@ class StubService:
     def kanban(self):
         return {"columns": {}}
 
+    def threats(self):
+        return {"threats": []}
+
     def add_feature(self, *a, **k):
         return "F-stub"
 
@@ -90,6 +93,25 @@ assert r.status_code == 200, f"commander must reach approve, got {r.status_code}
 assert client.post("/features", json={"title": "x"}, headers=hdr("nope")).status_code == 401, "bad token → 401"
 assert client.post("/features", json={"title": "x"}).status_code == 401, "no token → 401"
 print("LAYER1 transport role gates: viewer<operator<commander enforced; 401 on bad/missing token  OK")
+
+# FINDING B — sensitive reads require a viewer token when RBAC is on (not world-readable)
+assert client.get("/threats").status_code == 401, "the threat feed must not be world-readable under RBAC"
+assert client.get("/threats", headers=hdr("tok-viewer")).status_code == 200, "a viewer may read"
+print("LAYER1b reads: audit/threat feeds require viewer+ when RBAC on (Finding B closed)  OK")
+
+# FINDING A — the Manager surface (:7100) enforces the SAME roles and does NOT fall open when RBAC is set
+# via THOR_USERS without the legacy THOR_API_TOKEN (the previous fail-open seam).
+os.environ.pop("THOR_API_TOKEN", None)
+from manager import api as manager_api  # noqa: E402
+
+mc = TestClient(manager_api.app)
+assert mc.post("/rooms/provision", json={"feature_id": "F1"}).status_code == 401, \
+    "Manager provision must NOT be open with no credential under RBAC (was the fail-open seam)"
+assert mc.post("/rooms/provision", json={"feature_id": "F1"}, headers=hdr("tok-viewer")).status_code == 403, \
+    "a viewer must not provision rooms"
+assert mc.post("/events/append", json={"event_type": "x", "payload": {}},
+               headers=hdr("tok-operator")).status_code == 403, "raw ledger write is commander-grade"
+print("LAYER1c Manager API (:7100): role-gated, no fail-open without THOR_API_TOKEN (Finding A closed)  OK")
 
 # RBAC OFF → fall back to OPEN (so `make qa`/`make prove` send no token and still pass)
 os.environ.pop("THOR_USERS", None)

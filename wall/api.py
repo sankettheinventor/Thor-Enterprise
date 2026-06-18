@@ -9,14 +9,21 @@ during bootstrap; real governance (the Leash / Manager) wraps this from Module 2
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+from rbac import OPERATOR
+from thor_http_auth import require_role
 
 from . import config, provisioner
 from .lifecycle import LifecycleController
 
 app = FastAPI(title="THOR Wall", version="0.1.0")
 _lifecycle = LifecycleController()
+# Provisioning/destroying a room is operational power — gate it (operator+) even though this low-level Wall
+# surface is not exposed by start_thor today (defence in depth: a future deploy that mounts it isn't open).
+# Falls back to the legacy single-token / open posture when THOR_USERS is unset (dev/test unchanged).
+_operator = require_role(OPERATOR)
 
 # Keep mount plans by room so destroy can clean temp dirs (process-local; rooms are ephemeral).
 _mount_plans: dict = {}
@@ -38,7 +45,7 @@ class ProvisionRequest(BaseModel):
 
 
 @app.post("/wall/provision")
-def provision(req: ProvisionRequest) -> dict:
+def provision(req: ProvisionRequest, _user=Depends(_operator)) -> dict:
     if req.task_type not in config.VALID_TASK_TYPES:
         raise HTTPException(400, f"invalid task_type; expected {config.VALID_TASK_TYPES}")
     room = provisioner.provision_room(
@@ -61,12 +68,12 @@ def health(room_id: str) -> dict:
 
 
 @app.post("/wall/rooms/{room_id}/pause")
-def pause(room_id: str) -> dict:
+def pause(room_id: str, _user=Depends(_operator)) -> dict:
     return _lifecycle.pause(room_id)
 
 
 @app.post("/wall/rooms/{room_id}/destroy")
-def destroy(room_id: str) -> dict:
+def destroy(room_id: str, _user=Depends(_operator)) -> dict:
     result = provisioner.destroy_room(room_id, _mount_plans.pop(room_id, None))
     return result
 

@@ -6,7 +6,10 @@ The smoke drives the engine in-process; this is the service shape for the real c
 """
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+
+from rbac import OPERATOR
+from thor_http_auth import require_role
 from pydantic import BaseModel
 
 from .engine import GovernanceEngine, VerdictContext
@@ -26,7 +29,7 @@ class VerdictReq(BaseModel):
 
 
 @app.post("/verdict")
-def verdict(req: VerdictReq):
+def verdict(req: VerdictReq, _user=Depends(require_role(OPERATOR))):
     ctx = VerdictContext(req.feature_id, req.branch, req.repo, req.contract, req.claim,
                          base_branch=req.base_branch, skill_results_ok=req.skill_results_ok)
     return _engine.run_verdict(ctx)

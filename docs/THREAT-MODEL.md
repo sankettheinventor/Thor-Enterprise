@@ -100,6 +100,21 @@ Config is env-driven like the rest (`THOR_USERS` = JSON `[{id, role, token, pubk
 single-token/open posture applies, so `make qa`/`make prove` (no token) pass unchanged. Proven:
 `tests/test_rbac.py` (fast lane) + `tools/qa/prove_rbac.py` (both layers, three roles).
 
+RBAC is enforced on **every served surface**, not just the dashboard: the Manager API (:7100,
+provision/destroy = operator, raw `events/append` = commander) and the Self-Audit API (:7150, benchmark =
+operator) carry the same role gates, and `require_token`/`require_role` are **RBAC-aware** — when `THOR_USERS`
+is set a valid per-user token is required even if the legacy `THOR_API_TOKEN` is unset (they no longer fall
+open on an RBAC-only deployment — AUD-rbac-failopen). Sensitive **reads** (audit feed, caught lies, threats,
+cost, the board) require a **viewer** token when RBAC is on, so the audit/threat feed is not world-readable
+and the viewer role is meaningful; liveness (`/health/system`), the SSE `/stream` (an `EventSource` cannot
+send an auth header; it emits only ledger seq numbers), the public VAPID key, and the static shell stay open.
+
+**By design (least authority):** only the highest-authority action — minting a merge — requires an Ed25519
+*signature*; operator/viewer actions are gated by token + role, not a signature. So a commander's per-user key
+is exercised (it signs merges) while operator/viewer keys are **registered identities** (the authority anchor
+for co-signing a new commander, or for elevation) that no current action challenges. This is intentional, not
+an omission: the cockpit never has to hold an operator signing key in the browser to run the build flow.
+
 ## Hardening added this pass
 - **Secret files** owner-only (`0600`/`0700`): the Ed25519 signing key and the VAPID key.
 - **Rate limit** (sliding window, per client) on the mutating surface — bounds brute-force / abuse (429); tune via `THOR_RL_MAX`/`THOR_RL_WINDOW`.

@@ -6,7 +6,10 @@ Run with:  uvicorn sdlc.api:app --host 127.0.0.1 --port 7140
 """
 from __future__ import annotations
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
+
+from rbac import OPERATOR
+from thor_http_auth import require_role
 from pydantic import BaseModel
 
 from . import skills
@@ -20,7 +23,7 @@ class ComposeReq(BaseModel):
 
 
 @app.post("/stage/compose_skills")
-def compose_skills(req: ComposeReq):
+def compose_skills(req: ComposeReq, _user=Depends(require_role(OPERATOR))):
     b = skills.compose(req.task_type, req.capability_tags)
     return {"floor": list(b.floor), "specialty": list(b.specialty), "bundle": list(b.all_skills)}
 

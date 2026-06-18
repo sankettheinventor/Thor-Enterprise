@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI
 
-from thor_http_auth import require_token
+from rbac import OPERATOR
+from thor_http_auth import require_role
 
 app = FastAPI(title="THOR Self-Audit", version="0.1.0")
 _sa = None
+_operator = require_role(OPERATOR)   # served on :7150 — running a benchmark is operational (operator+)
 
 
 def bind(sa) -> None:
@@ -30,7 +32,7 @@ def meta_trust():
 
 
 @app.post("/selfaudit/benchmark/run")
-def benchmark(_: None = Depends(require_token)):
+def benchmark(_user=Depends(_operator)):
     return _sa.run_benchmark()
 
 

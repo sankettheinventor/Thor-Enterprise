@@ -39,6 +39,12 @@ class _StubService:
     def kanban(self):
         return {"columns": {}}
 
+    def threats(self):
+        return {"threats": []}
+
+    def health_system(self):
+        return {"ok": True}
+
     def add_feature(self, *a, **k):
         return "F-stub"
 
@@ -79,6 +85,30 @@ def test_commander_reaches_authority_surface(client):
 def test_bad_or_missing_token_is_401(client):
     assert client.post("/features", json={"title": "x"}, headers=_h("nope")).status_code == 401
     assert client.post("/features", json={"title": "x"}).status_code == 401
+
+
+def test_sensitive_reads_require_viewer_when_rbac_on(client):
+    """FINDING B: with RBAC on, the audit/threat/cost feeds require at least a viewer token (not world-
+    readable); liveness stays open so probes still work."""
+    assert client.get("/threats").status_code == 401          # no token → blocked
+    assert client.get("/threats", headers=_h("tok-viewer")).status_code == 200   # viewer may read
+    assert client.get("/health/system").status_code in (200, 500)  # liveness stays open (no 401)
+
+
+def test_manager_api_is_role_gated_and_not_failopen(monkeypatch):
+    """FINDING A: the Manager surface (:7100) must enforce the SAME roles and must NOT fall open when RBAC
+    is configured via THOR_USERS without the legacy THOR_API_TOKEN."""
+    monkeypatch.setenv("THOR_USERS", json.dumps(USERS))
+    monkeypatch.delenv("THOR_API_TOKEN", raising=False)
+    from manager import api as manager_api
+    c = TestClient(manager_api.app)
+    body = {"feature_id": "F1"}
+    assert c.post("/rooms/provision", json=body).status_code == 401            # no creds → NOT open anymore
+    assert c.post("/rooms/provision", json=body, headers=_h("tok-viewer")).status_code == 403   # viewer too low
+    # raw ledger write is commander-grade
+    ev = {"event_type": "x", "payload": {}}
+    assert c.post("/events/append", json=ev, headers=_h("tok-operator")).status_code == 403
+    assert c.post("/events/append", json=ev).status_code == 401
 
 
 def test_rbac_off_falls_back_to_open(monkeypatch):

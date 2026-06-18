@@ -56,7 +56,17 @@ def is_authorized(authorization: str | None) -> bool:
 
 
 def require_token(authorization: str | None = Header(default=None)) -> None:
-    """FastAPI dependency for mutating endpoints: 401 unless authorized."""
+    """FastAPI dependency for mutating endpoints: 401 unless authorized.
+
+    RBAC-aware (AUD-rbac-failopen): when THOR_USERS is configured, a valid PER-USER token is required even
+    though THOR_API_TOKEN may be unset — otherwise this gate would fall OPEN on a deployment that uses RBAC
+    without the legacy single token. (Endpoints that need a specific ROLE use `require_role`; this is the
+    floor — any registered user — for surfaces that only need 'a known caller'.)"""
+    import rbac
+    if rbac.rbac_enabled():
+        if rbac.user_for_token(authorization) is None:
+            raise HTTPException(status_code=401, detail="missing or invalid API token")
+        return
     if not is_authorized(authorization):
         raise HTTPException(status_code=401, detail="missing or invalid API token")
 
