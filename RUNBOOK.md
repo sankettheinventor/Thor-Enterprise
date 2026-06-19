@@ -70,8 +70,29 @@ the `dashboard` Service on `:7080` — same effect as Caddy. The `/stream` route
 
 ## Operate
 - **Halt / recover:** a failed governor → the Sentinel halts new work (fail-closed); a `room:` fault kills
-  one room. On restart, crash-replay rebuilds exact state from the ledger; orphan rooms are reaped.
+  one room. On restart, crash-replay rebuilds exact state from the ledger; orphan rooms are reaped, and any
+  build interrupted by the crash is **re-queued to `ready`** (the verdict re-judges from reality on
+  re-dispatch — no false `done`).
 - **Audit:** `GET /audit/export` for the signed, hash-chained ledger; `GET /lies` for caught fabrications.
+- **Metrics:** scrape `GET /metrics` (Prometheus text) — ledger size, active rooms, features-by-status,
+  lies caught, active threats, `thor_frontier_calls_total` (must stay 0 — zero token cost). Open like
+  liveness (a scraper carries no token).
+- **RBAC (multi-user):** set `THOR_USERS` = JSON `[{"id","role":"viewer|operator|commander","token","pubkey"}]`.
+  Roles: viewer reads, operator runs the flow, only a commander signs merges. Without it, the single
+  `THOR_API_TOKEN` posture applies.
+
+## Backups & restore (the ledger is the source of truth)
+The `pgbackup` service runs scheduled `pg_dump` into the `thor_pgbackups` volume (retention via
+`THOR_BACKUP_KEEP_DAYS/WEEKS/MONTHS`; schedule via `THOR_BACKUP_SCHEDULE`, default `@daily`).
+```bash
+# list backups
+docker compose -f docker-compose.prod.yml exec pgbackup ls -lh /backups/daily
+# restore a dump (stop the control plane first so nothing writes during restore)
+docker compose -f docker-compose.prod.yml stop controlplane
+gunzip -c /path/to/thor-<timestamp>.sql.gz | \
+  docker compose -f docker-compose.prod.yml exec -T postgres psql -U postgres -d thor
+docker compose -f docker-compose.prod.yml start controlplane   # rebuild_from_log replays the ledger
+```
 
 ## Verify the build (the trust bar)
 ```bash

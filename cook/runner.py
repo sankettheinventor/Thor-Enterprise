@@ -44,6 +44,9 @@ class CookRunner:
         return {room_id, exit_code, network_mode, output, _mount_plan}. The caller then runs the GovEngine
         verdict on the branch (the agnostic enforcement). The network mode is AUTO-SELECTED from the cook's
         egress allowlist (one_door when it needs its model, else sealed); pass `network_mode` to override."""
+        problems = self.runtime.preflight()
+        if problems:                                 # fail fast + clearly (e.g. a missing frontier OAuth token)
+            raise ValueError("cook preflight failed: " + "; ".join(problems))
         allowlist = self.runtime.egress_allowlist()
         if network_mode is None:
             network_mode = "one_door" if allowlist else "sealed"   # C1: a cook that needs its model gets one door

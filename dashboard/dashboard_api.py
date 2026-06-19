@@ -154,6 +154,13 @@ def health_system():
     return _service.health_system()
 
 
+@app.get("/metrics", response_class=PlainTextResponse)
+def metrics():
+    """Prometheus text-format metrics for observability scrapers. Aggregate operational counters only
+    (no per-cook payloads), so it stays open like liveness even under RBAC — a scraper carries no token."""
+    return _service.metrics()
+
+
 @app.get("/rooms/activity")
 def rooms_activity():
     """Per-room LIVE file activity — which file each room's cook is writing/was denied (from the Leash)."""

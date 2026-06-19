@@ -164,6 +164,13 @@ def boot() -> list[tuple[object, int]]:
     manager.rebuild_from_log()
     print(f"[thor] Manager   room mechanism up — sole EventLog writer (decides nothing); "
           f"replayed {manager.eventlog.count()} events on boot")
+    # AC-8 crash-resume: after the projection is rebuilt, re-queue any build interrupted by the crash (the
+    # plane just started, so a mid-flight feature is orphaned). The verdict re-judges from reality on the
+    # re-dispatch, so recovery can never resurrect a false `done`.
+    _rec = manager.recover_in_flight()
+    if _rec["recovered"]:
+        print(f"[thor] Recovery  {len(_rec['recovered'])} interrupted build(s) re-queued to ready: "
+              + ", ".join(r["feature_id"] for r in _rec["recovered"]))
 
     # ---- 4) PM — the plan: the catalog lives in the ledger; the SDLC stage library is available ----
     print("[thor] PM        plan ready — feature catalog (in ledger) + SDLC stage library")

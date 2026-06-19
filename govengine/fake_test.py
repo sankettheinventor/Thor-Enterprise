@@ -17,11 +17,92 @@ import ast
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import uuid
 
 from . import reality
+
+# ---------------------------------------------------------------------------
+# LANGUAGE-AGNOSTIC mechanical verification (HH-nonpy-coverage). Python source gets behaviour-level proof
+# (body-gut + coverage above). For NON-Python contracted source we use EXERCISE-level proof: empty the
+# source file and re-run the cook's declared test — a test that genuinely exercises the file must now go RED
+# (missing symbol / empty behaviour). If it stays GREEN it does not exercise the file → hollow. This is
+# weaker than Python's body-gut (it proves the test DEPENDS ON the file, not that it asserts exact
+# behaviour), but it is a real machine check that replaces the blanket "escalate to a human" for any
+# language whose test we can actually run. Languages whose runtime is absent from the room image fall back
+# to escalation (baseline run fails) — honest, never a false pass.
+_INTERP = {".py": ["python3"], ".js": ["node"], ".mjs": ["node"], ".cjs": ["node"],
+           ".sh": ["sh"], ".bash": ["bash"], ".rb": ["ruby"], ".php": ["php"], ".pl": ["perl"], ".go": ["go", "run"]}
+_NONPY_CAP = 8   # bound the per-file mutation runs; if more sources exist we report it (no silent cap)
+
+
+def _test_argv(test_relpath: str, contract: dict) -> list[str] | None:
+    """How to RUN the cook's test: an explicit `test_command` from the contract wins; else inferred from the
+    test file's extension. None when we have no runner (→ the source escalates to a human, never a false pass)."""
+    cmd = contract.get("test_command")
+    if cmd:
+        return shlex.split(cmd) if isinstance(cmd, str) else list(cmd)
+    interp = _INTERP.get(os.path.splitext(test_relpath)[1].lower())
+    return (interp + [test_relpath]) if interp else None
+
+
+def _run_test_rc(repo: str, argv: list[str], blank_target: str | None = None) -> int:
+    """Run the test (optionally with `blank_target` emptied) and return its exit code. Sealed when a real
+    cook is in play (untrusted code never touches the host); restore-in-place on the gated trusted path."""
+    if reality._use_sandbox():
+        prepare = None
+        if blank_target:
+            def prepare(dst, t=blank_target):   # empty the source IN THE SANDBOX COPY only
+                open(os.path.join(dst, t), "w").close()
+        rc, _out, _ = reality.sandboxed_run(repo, argv, prepare=prepare)
+        return rc
+    tpath = os.path.join(repo, blank_target) if blank_target else None
+    original = None
+    try:
+        if tpath:
+            original = open(tpath, encoding="utf-8").read()
+            open(tpath, "w").close()            # truncate to empty
+        return subprocess.run(argv, cwd=repo, env=reality._minimal_env(),
+                              capture_output=True, timeout=30).returncode
+    except Exception:  # noqa: BLE001 — runner missing / timeout → treat as failure (non-zero), never a pass
+        return 1
+    finally:
+        if tpath and original is not None:
+            with open(tpath, "w", encoding="utf-8") as f:
+                f.write(original)               # ALWAYS restore the cook's worktree
+
+
+def verify_nonpython(repo: str, contract: dict) -> tuple[str, str]:
+    """Mechanically verify a NON-Python feature by mutation-discrimination. Returns one of:
+      "n/a"        — no non-Python contracted source (Python feature / no source); stakes behave normally.
+      "verified"   — every non-Python contracted source is exercised by the test (test goes RED when each is
+                     emptied) → the feature is machine-verified and need NOT escalate to a human.
+      "unverified" — there is non-Python source but the test does not exercise it / cannot be run → escalate.
+    """
+    cited = contract.get("scope", {}).get("files", [])
+    declared_tests = (contract.get("test_file"), contract.get("regression_file"))
+    nonpy = [f for f in cited
+             if "." in os.path.basename(f) and not f.endswith(".py") and f not in declared_tests]
+    if not nonpy:
+        return "n/a", "no non-python contracted source"
+    test_rel = contract.get("test_file")
+    if not test_rel or not os.path.exists(os.path.join(repo, test_rel)):
+        return "unverified", "no declared test to mechanically verify the non-python source"
+    argv = _test_argv(test_rel, contract)
+    if argv is None:
+        return "unverified", f"no runner for {test_rel} (unknown extension; declare contract.test_command)"
+    if _run_test_rc(repo, argv) != 0:           # baseline: the test must PASS as written
+        return "unverified", "the declared test does not pass as written (cannot verify against it)"
+    checked = nonpy[:_NONPY_CAP]
+    for target in checked:
+        if not os.path.exists(os.path.join(repo, target)):
+            return "unverified", f"contracted source {target} absent"
+        if _run_test_rc(repo, argv, blank_target=target) == 0:
+            return "unverified", f"test stays GREEN when {target} is emptied — it does not exercise it"
+    tail = "" if len(nonpy) <= _NONPY_CAP else f" (capped at {_NONPY_CAP} of {len(nonpy)})"
+    return "verified", f"test goes red when each of {len(checked)} non-python source file(s) is emptied{tail}"
 
 
 def is_hollow(repo: str, test_relpath: str | None, contract: dict) -> tuple[bool, str]:

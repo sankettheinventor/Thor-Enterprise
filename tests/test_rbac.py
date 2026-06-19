@@ -45,6 +45,10 @@ class _StubService:
     def health_system(self):
         return {"ok": True}
 
+    def metrics(self):
+        from dashboard.service import DashboardService
+        return DashboardService.metrics(self)   # the real (fully defensive) metric builder
+
     def add_feature(self, *a, **k):
         return "F-stub"
 
@@ -93,6 +97,14 @@ def test_sensitive_reads_require_viewer_when_rbac_on(client):
     assert client.get("/threats").status_code == 401          # no token → blocked
     assert client.get("/threats", headers=_h("tok-viewer")).status_code == 200   # viewer may read
     assert client.get("/health/system").status_code in (200, 500)  # liveness stays open (no 401)
+
+
+def test_metrics_is_open_prometheus_even_under_rbac(client):
+    """Observability: /metrics is Prometheus text and stays open (a scraper carries no token), and degrades
+    gracefully (the stub lacks most sources, so counters default rather than 500)."""
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert "thor_frontier_calls_total" in r.text and "# TYPE" in r.text
 
 
 def test_manager_api_is_role_gated_and_not_failopen(monkeypatch):

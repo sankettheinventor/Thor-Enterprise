@@ -56,6 +56,12 @@ class CookRuntime(ABC):
         everything else. Default: from THOR_COOK_EGRESS (comma-separated); empty = fully sealed."""
         return tuple(h.strip() for h in os.environ.get("THOR_COOK_EGRESS", "").split(",") if h.strip())
 
+    def preflight(self) -> list[str]:
+        """Config problems to surface BEFORE provisioning a room (e.g. a missing credential). Empty = ready.
+        The runner refuses to launch when this is non-empty, so a misconfigured cook fails fast and clearly
+        instead of dying opaquely inside the sealed room."""
+        return []
+
     def describe(self, feature_slice: dict) -> dict:
         return {"cook": self.name, "image": self.image(), "command": self.command(feature_slice),
                 "env_keys": sorted(self.env().keys()), "egress_allowlist": list(self.egress_allowlist())}
@@ -83,6 +89,15 @@ class ClaudeCodeRuntime(CookRuntime):
         # Claude Code's required hosts (the one-door gateway denies all else). Override with THOR_COOK_EGRESS.
         env = super().egress_allowlist()
         return env or ("api.anthropic.com", "claude.ai", "console.anthropic.com", "statsig.anthropic.com")
+
+    def preflight(self) -> list[str]:
+        """Fail fast on a misconfigured frontier deploy: the live Claude Code cook authenticates with an
+        operator-supplied OAuth token (`claude setup-token`). Without it the cook would launch and only fail
+        opaquely inside the sealed room — so surface the exact fix here, before provisioning."""
+        if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            return ["CLAUDE_CODE_OAUTH_TOKEN is not set — run `claude setup-token` and export it "
+                    "(the frontier cook authenticates with it; THOR injects no model key)"]
+        return []
 
 
 class GenericCommandRuntime(CookRuntime):

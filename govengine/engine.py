@@ -13,6 +13,7 @@ import json
 from dataclasses import dataclass, field
 
 from . import divergence as div_mod
+from . import fake_test as fake_test_mod
 from . import panel
 from . import probes as probes_mod
 from . import reality
@@ -43,17 +44,19 @@ def _is_test_file(contract: dict, path: str) -> bool:
     return path in (contract.get("test_file"), contract.get("regression_file"))
 
 
-def _stakes(contract: dict, changed: set[str]) -> str:
+def _stakes(contract: dict, changed: set[str], nonpy_status: str = "n/a") -> str:
     protected = set(contract.get("protected_files", []))
     scope = set(contract.get("scope", {}).get("files", []))
-    # Non-Python contracted source cannot be coverage-/discrimination-verified (the anti-hollow gate is
-    # .py-only) — so its "tests" prove nothing mechanically. Escalate to a human signature rather than let
-    # unverifiable web/config work earn an auto-`done` (HH-nonpy-coverage). Python source keeps the full
-    # mechanical guarantee; this only raises the bar for what THOR cannot yet verify by itself.
-    for f in scope:
-        base = f.rsplit("/", 1)[-1]
-        if "." in base and not base.endswith(".py") and not _is_test_file(contract, f):
-            return "high"
+    # Non-Python contracted source: it now gets EXERCISE-level mechanical verification (mutation-
+    # discrimination — `fake_test.verify_nonpython`). When that proves the test exercises every non-Python
+    # source ("verified"), the feature is machine-verified and is NOT escalated. Only when it is "unverified"
+    # (the test does not exercise it, or its runtime is absent so we cannot run it) do we escalate to a human
+    # signature rather than let unverifiable work earn an auto-`done` (HH-nonpy-coverage, fail-closed).
+    if nonpy_status != "verified":
+        for f in scope:
+            base = f.rsplit("/", 1)[-1]
+            if "." in base and not base.endswith(".py") and not _is_test_file(contract, f):
+                return "high"
     for f in changed:
         if f in protected or f.rsplit("/", 1)[-1] in DEP_MANIFESTS:
             return "high"
@@ -77,7 +80,8 @@ class GovernanceEngine:
             m1_pass = next(x for x in probe_results if x.name == "M1").passed
             gate_hits = len(reality.gate_hits(ctx.manager, ctx.commit_window))
             d = div_mod.detect(ctx.claim, changed, m1_pass, gate_hits)
-            stakes = _stakes(ctx.contract, changed)
+            nonpy_status, _nonpy_why = fake_test_mod.verify_nonpython(ctx.repo, ctx.contract)
+            stakes = _stakes(ctx.contract, changed, nonpy_status)
             verdict = panel.adjudicate(probe_results, d, stakes)
             snapshot = reality.head_sha(ctx.repo, ctx.branch)
         except reality.RealityError as e:

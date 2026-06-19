@@ -237,6 +237,46 @@ class DashboardService:
         from sentinel.threat_detector import ThreatDetector
         return {"threats": ThreatDetector(self.manager).scan()}
 
+    def metrics(self) -> str:
+        """Prometheus text-format metrics for observability (scrape `/metrics`). Aggregate operational
+        counters only — no per-cook payloads — so it is safe to expose to a scraper. Every metric is
+        computed defensively: a faulty source contributes nothing rather than breaking the scrape."""
+        lines: list[str] = []
+
+        def g(name: str, help_: str, value, labels: str = "") -> None:
+            lines.append(f"# HELP {name} {help_}")
+            lines.append(f"# TYPE {name} gauge")
+            lines.append(f"{name}{{{labels}}} {value}" if labels else f"{name} {value}")
+
+        def safe(fn, default=0):
+            try:
+                return fn()
+            except Exception:  # noqa: BLE001 — one bad source must not break the whole scrape
+                return default
+
+        g("thor_connected", "1 if the control plane is connected to its ledger",
+          int(bool(safe(lambda: self.connected(), False))))
+        g("thor_ledger_events_total", "rows in the tamper-evident event ledger",
+          safe(lambda: self.manager.eventlog.count()))
+        g("thor_rooms_active", "live (non-destroyed) rooms", safe(lambda: len(self.rooms_live())))
+        feats = safe(lambda: self.manager.list_features(), [])
+        g("thor_features_total", "features in the catalog", len(feats))
+        by_status: dict[str, int] = {}
+        for f in feats:
+            by_status[f.get("status") or "backlog"] = by_status.get(f.get("status") or "backlog", 0) + 1
+        for st, n in sorted(by_status.items()):
+            g("thor_features_by_status", "features by SDLC status", n, labels=f'status="{st}"')
+        g("thor_lies_caught_total", "caught dishonest-cook events", safe(lambda: self.lies_caught()["total"]))
+        g("thor_threats_active", "current named attack signatures over the window",
+          safe(lambda: len(self.threats()["threats"])))
+        g("thor_bugs_total", "bugs found across the line (QA + checker)", safe(lambda: len(self.bugs())))
+        health = safe(lambda: self.health_system(), {})
+        g("thor_sentinel_halted", "1 if the Sentinel has halted the plane",
+          int(bool((health.get("sentinel") or {}).get("halted"))))
+        g("thor_frontier_calls_total", "frontier-model API calls (MUST stay 0 — zero token cost)",
+          safe(lambda: (health.get("self_audit") or {}).get("frontier_calls", 0)))
+        return "\n".join(lines) + "\n"
+
     def dry_run(self) -> dict:
         if self.scheduler_factory is None:
             return {"waves": [], "cost_estimate": 0, "provisioned": 0}

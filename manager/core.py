@@ -172,6 +172,37 @@ class ThorManager:
     def verify_room_identity(self, room_id: str, token: str) -> bool:  # FR-5 / AC-8
         return self.identity.verify_identity(token, room_id)["valid"]
 
+    # ---- crash-resume of in-flight work (AC-8): run at boot, AFTER rebuild_from_log ----
+    _INFLIGHT_STATES = ("building", "in_qa")
+
+    def _working_room_ids(self, feature_id: str) -> list[str]:
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT room_id FROM rooms WHERE feature_id=%s AND status='working'", (feature_id,))
+            return [r[0] for r in cur.fetchall()]
+
+    def recover_in_flight(self) -> dict:
+        """Crash-resume. The control plane has JUST started, so nothing is actively building yet — any
+        feature whose projected status is mid-flight (`building`/`in_qa`) is an interrupted build from before
+        the crash. Re-queue it to `ready` (the scheduler re-dispatches; the verdict re-judges from reality,
+        so no false `done` can slip through), and mark its orphaned `working` room destroyed (branch
+        preserved) so a fresh room can be provisioned (FR-20 one-branch-one-room). Idempotent; never touches
+        `awaiting_signature` (work done, human pending) or `done`. Projection rebuild runs first."""
+        recovered = []
+        for f in self.list_features():
+            if (f.get("status") or "backlog") not in self._INFLIGHT_STATES:
+                continue
+            fid = f["feature_id"]
+            for room_id in self._working_room_ids(fid):
+                # The container (if any) died with the crash; record the projection-level teardown so the
+                # branch is freed for a fresh room. (Best-effort docker reap is the provisioner's job.)
+                self._record("room.destroyed",
+                             {"room_id": room_id, "status": "destroyed", "branch_preserved": True,
+                              "reason": "crash-recovery"}, room_id=room_id, feature_id=fid)
+            self.set_feature_status(fid, "ready")
+            self._record("feature.recovered", {"feature_id": fid, "from": f.get("status")}, feature_id=fid)
+            recovered.append({"feature_id": fid, "from": f.get("status")})
+        return {"recovered": recovered}
+
     # ---- 3.5 Card & Signature Authority (the three signature points) ----
     def raise_card(self, type_: str, feature_id: str, payload: dict, held: bool = False) -> str:
         card_id = "card-" + uuid.uuid4().hex[:8]

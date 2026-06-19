@@ -1,0 +1,53 @@
+name: THOR CI
+
+# ACTIVATION: copy this file to `.github/workflows/ci.yml` and push it. GitHub refuses a Personal Access
+# Token without the `workflow` scope from creating files under `.github/workflows/`, so the repo owner must
+# either (a) push it with a PAT that has the `workflow` scope, or (b) add it via the GitHub web UI
+# (Actions -> New workflow -> paste this). It is kept here (`docs/ci/`) so the definition ships in-repo and
+# every push isn't blocked by the scope rule.
+#
+# Standing safety net: the docker-free lane (`pytest -m 'not deferred'`) runs on every push and PR, so a
+# regression can't merge silently. The live lanes (`make prove` — real Docker rooms + Postgres; `make
+# launch` — the attack campaign) are run by an operator on a Docker host and are out of scope for this
+# hosted runner; this gate covers the fast, hermetic suite (the same one `make qa` runs).
+on:
+  push:
+    branches: [main, "qa/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  qa:
+    name: docker-free suite + guards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Import sanity (every served + dormant surface)
+        run: |
+          python -c "import rbac, thor_http_auth, manager.api, selfaudit.api, wall.api, govengine.api, sdlc.api, scheduler.api, dashboard.dashboard_api; print('imports OK')"
+
+      - name: Docker-free test lane (same as make qa)
+        run: pytest -m 'not deferred' -q
+
+      - name: Guard — no AI co-author trailers in this push's commits
+        if: github.event_name == 'push'
+        run: |
+          # The human is the sole author (HCD). Fail if any commit added an AI Co-Authored-By trailer.
+          range="${{ github.event.before }}..${{ github.sha }}"
+          if git rev-parse "${{ github.event.before }}" >/dev/null 2>&1; then
+            hits=$(git log "$range" --format='%(trailers:key=Co-Authored-By)' | grep -ic 'claude\|anthropic\|copilot\|gpt' || true)
+          else
+            hits=$(git log -1 --format='%(trailers:key=Co-Authored-By)' | grep -ic 'claude\|anthropic\|copilot\|gpt' || true)
+          fi
+          if [ "$hits" != "0" ]; then echo "AI co-author trailer found ($hits) — not allowed"; exit 1; fi
+          echo "co-author guard: clean"

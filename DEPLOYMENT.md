@@ -46,9 +46,12 @@ single-host Docker deployment. Full plan in `k8s/README.md`.
 - [x] Health endpoints for liveness/readiness probes; resource requests/limits in k8s
 - [x] Single-writer enforced (Manager is sole EventLog writer; `replicas: 1`)
 - [x] **TLS / ingress** — Caddy terminates `:443` in `docker-compose.prod.yml` (auto-cert; persisted in `caddy_data`)
-- [x] **Real in-room cook agent** + one-door egress — `BuildStage → CookRunner`, per-feature one-door gateway (C1/C2); **parallel cooks** isolated per feature. *Live frontier (Claude Code) run still needs an operator-supplied `CLAUDE_CODE_OAUTH_TOKEN` — deferred, not faked.*
-- [ ] **Postgres HA / backups**, observability (metrics/tracing), crash-recovery **resume of in-flight work** (projection rebuild-from-ledger is done; resuming an interrupted build is not), load tests
-- [ ] **CI gate** — `make qa`/`make prove`/`make launch` are green but not yet wired as an automated pipeline (`.github/workflows`)
+- [x] **Real in-room cook agent** + one-door egress — `BuildStage → CookRunner`, per-feature one-door gateway (C1/C2); **parallel cooks** isolated per feature; runtime **preflight** fails fast on a missing credential. *Live frontier (Claude Code) run still needs an operator-supplied `CLAUDE_CODE_OAUTH_TOKEN` — deferred, not faked.*
+- [x] **Backups** — scheduled `pg_dump` (the `pgbackup` service) with retention; restore in RUNBOOK. The ledger (audit chain) survives host loss.
+- [x] **Observability** — Prometheus `/metrics` (ledger size, active rooms, features-by-status, lies caught, threats, frontier-calls=0).
+- [x] **Crash-recovery resume of in-flight work** — boot re-queues any build interrupted by a crash; the verdict re-judges from reality (no false `done`).
+- [x] **CI gate** — `docs/ci/ci.yml` runs the docker-free suite + import + no-AI-co-author guard on every push/PR. *Activate by copying it to `.github/workflows/ci.yml` (needs a PAT with the `workflow` scope, or add via the GitHub web UI).*
+- [x] **Non-Python mechanical verification** — exercise-level mutation-discrimination (`verify_nonpython`): a non-Python feature whose test provably exercises the source is machine-verified; only genuinely unverifiable work escalates to a human.
+- [ ] **Postgres HA** (single instance, volume- + backup-backed today; multi-replica HA is a deploy-infra choice), **distributed tracing**, **load/soak tests**
 - [ ] **k8s-native room provisioner** (Pods) — **de-scoped** for the single-host product target; surfaces run on k8s but build rooms stay on the Docker host
-- [ ] **Non-Python mechanical verification** — JS/HTML/SQL work **escalates to a human** (fail-closed/safe) rather than being machine-verified
 ```

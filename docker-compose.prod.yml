@@ -1,7 +1,8 @@
 # THOR Enterprise — single-host production deployment (control plane + Postgres).
 #
 # Secrets come from the environment (or a .env file beside this one — NEVER commit it):
-#   THOR_API_TOKEN       (required) bearer token for the mutating HTTP endpoints
+#   THOR_API_TOKEN       (required UNLESS using THOR_USERS) single bearer token for mutating endpoints
+#   THOR_USERS           (optional) RBAC roster: JSON [{"id","role","token","pubkey"}] — viewer/operator/commander
 #   THOR_PG_PASSWORD     (recommended) Postgres password   THOR_SELFAUDIT_PASSWORD (optional)
 # Bring up:
 #   export THOR_API_TOKEN=$(openssl rand -hex 32) THOR_PG_PASSWORD=$(openssl rand -hex 16)
@@ -21,6 +22,28 @@ services:
       interval: 5s
       timeout: 3s
       retries: 30
+
+  # Scheduled Postgres backups — the ledger is THOR's source of truth (the tamper-evident audit chain), so
+  # it must survive host loss. pg_dump runs on a schedule with retention; dumps land in the thor_pgbackups
+  # volume. Restore (RUNBOOK): `gunzip -c <dump>.sql.gz | psql -U postgres -d thor`. Tune via env.
+  pgbackup:
+    image: prodrigestivill/postgres-backup-local:16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: thor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${THOR_PG_PASSWORD:-thor}
+      SCHEDULE: ${THOR_BACKUP_SCHEDULE:-@daily}
+      BACKUP_KEEP_DAYS: ${THOR_BACKUP_KEEP_DAYS:-14}
+      BACKUP_KEEP_WEEKS: ${THOR_BACKUP_KEEP_WEEKS:-8}
+      BACKUP_KEEP_MONTHS: ${THOR_BACKUP_KEEP_MONTHS:-12}
+      HEALTHCHECK_PORT: 8080
+    volumes:
+      - thor_pgbackups:/backups
+    restart: unless-stopped
 
   # Real git host (P5). THOR DECIDES (Sig-3 gates merge) + runs its OWN tests; Gitea only EXECUTES.
   gitea:
@@ -49,7 +72,9 @@ services:
     environment:
       # reach the compose Postgres by SERVICE NAME on the internal network
       THOR_PG_DSN: postgresql://postgres:${THOR_PG_PASSWORD:-thor}@postgres:5432/thor
-      THOR_API_TOKEN: ${THOR_API_TOKEN:?set a strong THOR_API_TOKEN before deploying}
+      THOR_API_TOKEN: ${THOR_API_TOKEN:-}     # single-token posture; OR set THOR_USERS for per-user RBAC
+      THOR_USERS: ${THOR_USERS:-}             # RBAC roster (viewer/operator/commander); see DEPLOYMENT.md
+      THOR_OPERATOR_PUBKEYS: ${THOR_OPERATOR_PUBKEYS:-}
       THOR_SELFAUDIT_PASSWORD: ${THOR_SELFAUDIT_PASSWORD:-selfaudit}
       THOR_BIND_HOST: "0.0.0.0"        # surfaces must bind 0.0.0.0 to be reachable through ports
       # P5: point THOR at the live Gitea (leave THOR_GIT_BACKEND unset to use local-git).
@@ -87,6 +112,7 @@ services:
 
 volumes:
   thor_pgdata:
+  thor_pgbackups:
   thor_gitea:
   caddy_data:
   caddy_config:
