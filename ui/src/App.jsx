@@ -80,6 +80,7 @@ export default function App() {
   const healthClass = halted ? 'alert' : alarms ? 'warn' : ''
   const shipped = d.features.filter((f) => f.status === 'done').length
   const live = d.features.filter((f) => isLive(f.status)).length
+  const openCards = d.cards.filter((c) => (c.status || 'open') === 'open').length
 
   return (
     <div className="app">
@@ -94,6 +95,14 @@ export default function App() {
       </aside>
 
       <main className="main">
+        <header className="topbar">
+          <div className="brand"><div className="brand-logo">T</div><div className="brand-name">THOR</div></div>
+          <div className="topbar-actions">
+            {openCards > 0 && <span className="topbar-pill">Your call · {openCards}</span>}
+            {pushSupported() && <button className="topbar-icon" aria-label="Notifications" onClick={async () => { const r = await enablePush(); toast(r.ok ? 'Notifications on' : `Push: ${r.reason}`) }}>🔔</button>}
+            <button className="btn btn-primary" onClick={act.newTask}>+ New</button>
+          </div>
+        </header>
         <div className={`health ${healthClass}`} onClick={() => setHealthOpen((v) => !v)}>
           <div className="health-dot" />
           <div className="health-mid truncate">
