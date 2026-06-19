@@ -8,7 +8,7 @@ its runtime is absent) does the feature escalate to a human — never a false au
 import os
 import stat
 
-from govengine import fake_test
+from govengine import fake_test, reality
 from govengine.engine import _stakes
 
 
@@ -19,6 +19,7 @@ def _w(p, content):
 
 
 def _repo(tmp_path, source, test, src_name="greet.sh", test_name="test_greet.sh"):
+    os.makedirs(tmp_path, exist_ok=True)
     _w(tmp_path / src_name, source)
     _w(tmp_path / test_name, test)
     return str(tmp_path), {"scope": {"files": [src_name]}, "test_file": test_name}
@@ -58,6 +59,29 @@ def test_unknown_runner_escalates(tmp_path):
     status, why = fake_test.verify_nonpython(repo, contract)
     assert status == "unverified", why
     assert _stakes(contract, {"thing.conf"}, status) == "high"
+
+
+def test_m1_runner_is_language_aware(tmp_path):
+    """The M1 test runner runs the RIGHT interpreter for the test's language (here: shell), not python3."""
+    repo, contract = _repo(tmp_path, "echo hello\n", REAL_TEST)
+    argv = fake_test.test_argv(contract["test_file"], contract)
+    assert argv == ["sh", "test_greet.sh"]
+    rc, _ = reality.run_test(repo, contract["test_file"], argv=argv)
+    assert rc == 0                                  # the shell test ran and passed (python3 would have errored)
+    # a broken source makes the same runner report failure
+    _w(tmp_path / "greet.sh", "echo goodbye\n")
+    rc2, _ = reality.run_test(repo, contract["test_file"], argv=argv)
+    assert rc2 != 0
+
+
+def test_is_hollow_routes_non_python_to_mutation_check(tmp_path):
+    """M1's hollow gate catches a hollow SHELL test and passes a genuine one — no Python needed."""
+    repo_ok, c_ok = _repo(tmp_path / "ok", "echo hello\n", REAL_TEST)
+    hollow, _ = fake_test.is_hollow(repo_ok, c_ok["test_file"], c_ok)
+    assert hollow is False                          # genuine shell test → not hollow
+    repo_bad, c_bad = _repo(tmp_path / "bad", "echo hello\n", "exit 0\n")
+    hollow2, _ = fake_test.is_hollow(repo_bad, c_bad["test_file"], c_bad)
+    assert hollow2 is True                          # vacuous shell test → hollow (M1 will fail it)
 
 
 def test_test_command_override_runs_the_declared_command(tmp_path):

@@ -30,7 +30,9 @@ def run_all(ctx) -> list[ProbeResult]:
     repo, branch = ctx.repo, ctx.branch
 
     # ---- M1: verifier exit 0, but a hollow test is overridden to fail (fake-test-checker, FR-13) ----
-    rc, out = reality.run_test(repo, c.get("test_file"))
+    # The runner is LANGUAGE-AGNOSTIC: inferred from the test extension or the contract's `test_command`, so
+    # a Go/JS/Ruby/shell test runs the same way a Python one does (its runtime must be in the room image).
+    rc, out = reality.run_test(repo, c.get("test_file"), argv=fake_test.test_argv(c.get("test_file"), c))
     hollow, why = fake_test.is_hollow(repo, c.get("test_file"), c)
     if rc == 0 and hollow:
         m1 = ProbeResult("M1", False, f"verifier exited 0 but test is hollow: {why}")

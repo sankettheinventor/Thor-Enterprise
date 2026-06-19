@@ -38,7 +38,7 @@ _INTERP = {".py": ["python3"], ".js": ["node"], ".mjs": ["node"], ".cjs": ["node
 _NONPY_CAP = 8   # bound the per-file mutation runs; if more sources exist we report it (no silent cap)
 
 
-def _test_argv(test_relpath: str, contract: dict) -> list[str] | None:
+def test_argv(test_relpath: str, contract: dict) -> list[str] | None:
     """How to RUN the cook's test: an explicit `test_command` from the contract wins; else inferred from the
     test file's extension. None when we have no runner (→ the source escalates to a human, never a false pass)."""
     cmd = contract.get("test_command")
@@ -90,7 +90,7 @@ def verify_nonpython(repo: str, contract: dict) -> tuple[str, str]:
     test_rel = contract.get("test_file")
     if not test_rel or not os.path.exists(os.path.join(repo, test_rel)):
         return "unverified", "no declared test to mechanically verify the non-python source"
-    argv = _test_argv(test_rel, contract)
+    argv = test_argv(test_rel, contract)
     if argv is None:
         return "unverified", f"no runner for {test_rel} (unknown extension; declare contract.test_command)"
     if _run_test_rc(repo, argv) != 0:           # baseline: the test must PASS as written
@@ -112,10 +112,25 @@ def is_hollow(repo: str, test_relpath: str | None, contract: dict) -> tuple[bool
     path = os.path.join(repo, test_relpath)
     if not os.path.exists(path):
         return True, "test file missing"
+
+    cited = contract.get("scope", {}).get("files", [])
+    # LANGUAGE ROUTING: the deep behaviour-level gates below (read the test SOURCE, gut Python function
+    # bodies, line-coverage) only make sense for Python. When the contracted source is NOT Python, verify it
+    # the language-agnostic way — mutation-discrimination (empty each source, the test must go RED). So a
+    # JS/Go/Ruby/shell hollow test is caught here too, not waved through.
+    py_target = next((f for f in cited if f.endswith(".py") and not os.path.basename(f).startswith("test_")),
+                     None)
+    if py_target is None:
+        status, why = verify_nonpython(repo, contract)
+        if status == "verified":
+            return False, f"non-python test exercises the contracted source ({why})"
+        if status == "unverified":
+            return True, f"non-python test does not exercise the contracted source ({why})"
+        return False, "no contracted source to falsify"          # n/a — nothing to check
+
     src = open(path).read()
 
     # (a) does it reference any contracted file / its module name? (does it touch the new code?)
-    cited = contract.get("scope", {}).get("files", [])
     modules = {os.path.splitext(os.path.basename(f))[0] for f in cited}   # e.g. src/login.py -> login
     references_feature = any(m and m in src for m in modules) or any(f in src for f in cited)
 

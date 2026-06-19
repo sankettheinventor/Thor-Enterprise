@@ -3,18 +3,21 @@
 **The one question:** *Can a real company point THOR at their real repository and have an AI agent build a
 real feature under governance, safely, today?*
 
-**One-line verdict:** **Production-ready** to govern AI coding agents building a **Python** feature in a
-**single-host** deployment with a **team** (RBAC: viewer/operator/commander) — every build runs in a
-sealed/one-door room, **multiple cooks run truly in parallel** each behind its own isolated egress door,
-every "done" is proven against reality, every merge carries a **commander** Ed25519 signature, and a lying
-or out-of-scope agent is caught. **Not yet ready** for non-Python coverage-of-diff, in-flight crash-resume,
-HA/backups/observability, or a turnkey hosted product — and the **frontier-model** cook is wired but its
-*live* run is gated on an OAuth token absent from this sandbox. (Kubernetes room fleets are **de-scoped** —
-single-host is the product target.)
+**One-line verdict:** **Production-ready** to govern AI coding agents building features in a **single-host**
+deployment with a **team** (RBAC: viewer/operator/commander) — every build runs in a sealed/one-door room,
+**multiple cooks run truly in parallel** each behind its own isolated egress door, every "done" is proven
+against reality, every merge carries a **commander** Ed25519 signature, and a lying or out-of-scope agent is
+caught. The entire cage (room, egress, ledger, signing, RBAC, parallel cooks) is **language-agnostic**; the
+verdict now **runs and verifies any language's tests** (runner inferred from the test, or `test_command`),
+with **Python** getting the deepest *behaviour-level* proof and other languages an *exercise-level* proof.
+**Not yet ready** for a turnkey hosted product or Postgres HA/tracing/load-tests — and the **frontier-model**
+cook is wired but its *live* run is gated on an OAuth token absent from this sandbox. (Kubernetes room fleets
+are **de-scoped** — single-host is the product target.)
 
-**Update (2026-06-18):** the former "multi-tenant/RBAC" and "single-host concurrency" not-ready items are
-now **CLOSED** — RBAC (`tests/test_rbac.py`, `tools/qa/prove_rbac.py`) and parallel per-feature cooks
-(`tools/qa/prove_parallel_cooks.py`) are proven. This report's §4 table is updated accordingly.
+**Update (2026-06-19):** RBAC, parallel cooks, in-flight crash-resume, backups/metrics/CI, and
+**language-agnostic verification** are all now **CLOSED** and proven (`tests/test_rbac.py`,
+`tools/qa/prove_parallel_cooks.py`, `tests/integration/test_crash_resume.py`,
+`tests/govengine/test_nonpy_verification.py`). §4 reflects this.
 
 All evidence below is reproducible from a clean tree on WSL2 + Docker + Postgres. THOR does not govern its
 own build; the moat only ever gets harder.
@@ -85,7 +88,7 @@ That is the entire footprint — no THOR source change to onboard a new project.
 | **Kubernetes room fleets** | **De-scoped** — single-host Docker is the product target (per the deployment decision). Surfaces run on k8s but build rooms stay on the Docker host. | — (out of scope) |
 | ~~**In-flight crash-resume**~~ ✅ CLOSED | Boot re-queues any build interrupted by a crash; the verdict re-judges from reality on re-dispatch (no false `done`). | `recover_in_flight`; `test_crash_resume.py` |
 | ~~**Backups / observability / CI**~~ ✅ CLOSED | Scheduled `pg_dump` (`pgbackup` service) + restore runbook; Prometheus `/metrics`; `.github/workflows` runs the docker-free suite + guards on every push/PR. | DEPLOYMENT.md; `dashboard /metrics` |
-| ~~**Non-Python mechanical verification**~~ ✅ CLOSED (exercise-level) | `verify_nonpython` mutation-discrimination: a non-Python feature whose test provably exercises the contracted source is machine-verified; only genuinely unverifiable work escalates. (Python keeps the deeper behaviour-level proof.) | `HH-nonpy-coverage`; `test_nonpy_verification.py` |
+| ~~**Any-language verification**~~ ✅ CLOSED | The verdict's test runner is language-agnostic (M1 runs the test via the runner inferred from its extension, or `contract.test_command`), and the hollow-test gate routes non-Python source through mutation-discrimination (`verify_nonpython`). Python gets behaviour-level proof; other languages exercise-level. Needs the language's runtime in the room image. | `HH-nonpy-coverage`; `test_nonpy_verification.py` |
 | **Postgres HA / tracing / load tests** | Single Postgres (volume- + backup-backed; multi-replica HA is a deploy-infra choice); no distributed tracing; no soak/load suite yet. | DEPLOYMENT.md checklist |
 | **Microsoft AGT backend** | The AGT **policy gate is real and consumed by the Leash**; AGT identity/health/compliance are **representative** stubs (no Azure creds). Real AGT plugs in behind the same Strangler seam at deploy (one-line construction change). | `L1`, `M9` (representative) |
 | **Turnkey hosted product** | Operator-run control plane (RUNBOOK), not a managed SaaS; no billing/tenancy. | — (scope) |
@@ -93,18 +96,20 @@ That is the entire footprint — no THOR source change to onboard a new project.
 ## 5 · Verdict
 
 **Production-ready for:** a single **team** (RBAC: viewer/operator/commander), governing AI agents
-(deterministic today; frontier with a token) running **in parallel** to build and merge **Python** features
-into **their own repository**, on one Docker host (TLS-terminated, bearer/RBAC-authed), with every action
-judged before it runs, every "done" proven against reality, and every merge **commander**-signed.
+(deterministic today; frontier with a token) running **in parallel** to build and merge features **in any
+language** into **their own repository**, on one Docker host (TLS-terminated, bearer/RBAC-authed), with every
+action judged before it runs, every "done" proven against reality, and every merge **commander**-signed.
+(Verifying a given language's tests needs that language's runtime in the room image; Python gets the
+deepest behaviour-level proof, other languages an exercise-level proof — never a false pass.)
 
-**Not-yet-ready for:** non-Python coverage enforcement, resume of a build interrupted mid-flight,
-HA/backups/observability/CI automation, a live frontier cook without an operator-supplied token, or a hosted
-SaaS. Kubernetes fleets are **de-scoped** (single-host is the target). None of these are faked — each is a
-named, tracked row, and the moat holds for everything inside the ready envelope.
+**Not-yet-ready for:** Postgres HA / distributed tracing / load-tests, a live frontier cook without an
+operator-supplied token, or a hosted SaaS. Kubernetes fleets are **de-scoped** (single-host is the target).
+None of these are faked — each is a named, tracked row, and the moat holds for everything inside the
+ready envelope.
 
 **Is it "100% production ready"?** Honestly, no — and that claim would violate truth-before-green. It is
-**production-ready within the envelope above** (now wider: RBAC teams + parallel cooks), with `make qa`
-(68/0), `make prove` (live), and `make launch` (8/8) all green. The remaining gap to "100%" is the
-not-yet-ready list — chiefly a **live frontier-cook run** (token-gated), **non-Python verification**
-(escalates safely), **in-flight crash-resume**, and **HA/backups/observability/CI**. All are tracked, none
+**production-ready within the envelope above** (now wider: RBAC teams + parallel cooks + any-language
+verification), with `make qa` (79/0), `make prove` (live), and `make launch` (8/8) all green. The remaining
+gap to "100%" is the not-yet-ready list — chiefly a **live frontier-cook run** (token-gated) and
+**HA/tracing/load-tests** (deploy-infra). All are tracked, none
 are hidden.

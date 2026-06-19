@@ -125,20 +125,27 @@ def head_sha(repo: str, ref: str = "HEAD") -> str:
 
 
 # ---- 6.3 Test/CI Verdict Reader (trigger a fresh verification run; CI proper = Module 12) ----
-def run_test(repo: str, test_relpath: str | None) -> tuple[int, str]:
+def run_test(repo: str, test_relpath: str | None, argv: list[str] | None = None) -> tuple[int, str]:
     """Run the (cook-written) test and return (exit_code, output). exit 0 = pass. A MACHINE runs it —
-    never the agent's word — and when a real cook is in play it runs SEALED (no host, no secrets, no net)."""
+    never the agent's word — and when a real cook is in play it runs SEALED (no host, no secrets, no net).
+
+    `argv` is HOW to run it — LANGUAGE-AGNOSTIC: the caller passes the runner inferred from the test's
+    extension (node/go/ruby/sh/...) or the contract's explicit `test_command`. Defaults to `python3 <test>`
+    for back-compat. (Running a non-Python test needs that language's runtime IN the room image — set
+    `THOR_COOK_IMAGE` to a toolchain image; an absent runtime returns 127, never a false pass.)"""
     if not test_relpath:
         return 1, "no test file declared"
     if not os.path.exists(os.path.join(repo, test_relpath)):
         return 1, f"test file missing: {test_relpath}"
+    argv = argv or ["python3", test_relpath]
     if _use_sandbox():
-        rc, out, _ = sandboxed_run(repo, ["python3", test_relpath])
+        rc, out, _ = sandboxed_run(repo, argv)
         return rc, out
     try:                                                   # docker-free gated suite (trusted fixtures)
-        p = subprocess.run(["python3", os.path.join(repo, test_relpath)], capture_output=True, text=True,
-                           timeout=30, cwd=repo, env=_minimal_env())
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=repo, env=_minimal_env())
         return p.returncode, (p.stdout + p.stderr)
+    except FileNotFoundError as e:                         # the language runtime is absent from the image
+        return 127, f"test runner not available ({e}) — the room image lacks this language's runtime"
     except subprocess.TimeoutExpired:
         raise RealityError("verification run timed out")
 
