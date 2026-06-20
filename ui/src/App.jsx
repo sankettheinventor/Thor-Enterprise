@@ -3,37 +3,28 @@ import { del, get, post } from './api.js'
 import { rejectCard, signCard } from './sign.js'
 import { enablePush, pushSupported } from './push.js'
 
-// our SDLC statuses -> board columns
-const COLUMNS = [
-  { key: 'backlog', label: 'Backlog', dot: 'var(--ink-4)', has: (s) => ['backlog', 'ready'].includes(s) },
-  { key: 'building', label: 'Building', dot: 'var(--tag-feature)', has: (s) => ['building', 'in_qa'].includes(s) },
-  { key: 'sign', label: 'Your call', dot: 'var(--warn)', has: (s) => s === 'awaiting_signature' },
-  { key: 'done', label: 'Shipped', dot: 'var(--ok)', has: (s) => s === 'done' },
-]
-const STATUS_LABEL = { backlog: 'Backlog', ready: 'Ready', building: 'Building', in_qa: 'QA', awaiting_signature: 'Awaiting you', done: 'Shipped' }
-const PRIOS = [['P0', 0], ['P1', 1], ['P2', 2], ['P3', 3]]
+const OWNER = 'Sanket'
 const isLive = (s) => ['building', 'in_qa'].includes(s)
+const inProg = (s) => ['building', 'in_qa', 'awaiting_signature'].includes(s)
+const pad2 = (n) => String(n).padStart(2, '0')
+const greetWord = () => { const h = new Date().getHours(); return h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening' }
 
 export default function App() {
   const [connected, setConnected] = useState(true)
-  const [healthOpen, setHealthOpen] = useState(false)
-  const [sel, setSel] = useState(null)        // selected feature_id
-  const [tab, setTab] = useState('overview')
-  const [search, setSearch] = useState('')
-  const [prio, setPrio] = useState(new Set())
   const [toasts, setToasts] = useState([])
-  const [d, setD] = useState({ features: [], rooms: [], activity: {}, audit: [], bugs: [], cards: [], health: {}, lies: {} })
+  const [busy, setBusy] = useState('')
+  const [d, setD] = useState({ features: [], rooms: [], audit: [], bugs: [], cards: [], health: {}, lies: {}, cost: {} })
 
   const refresh = useCallback(async () => {
     try {
-      const [progress, rooms, activity, audit, bugs, cards, health, lies] = await Promise.all([
-        get('/progress'), get('/rooms/live'), get('/rooms/activity'), get('/audit/feed'),
-        get('/bugs'), get('/cards'), get('/health/system'), get('/lies'),
+      const [progress, rooms, audit, bugs, cards, health, lies, cost] = await Promise.all([
+        get('/progress'), get('/rooms/live'), get('/audit/feed'), get('/bugs'),
+        get('/cards'), get('/health/system'), get('/lies'), get('/cost').catch(() => ({})),
       ])
       setD({
-        features: progress.features || [], rooms: rooms.rooms || rooms || [], activity: activity || {},
+        features: progress.features || [], rooms: rooms.rooms || rooms || [],
         audit: audit.events || audit || [], bugs: bugs.bugs || [], cards: cards.cards || cards || [],
-        health: health || {}, lies: lies || {},
+        health: health || {}, lies: lies || {}, cost: cost || {},
       })
       setConnected(true)
     } catch { setConnected(false) }
@@ -52,270 +43,172 @@ export default function App() {
     return () => { if (es) es.close(); clearInterval(t) }
   }, [refresh])
 
-  const toast = (msg) => { const id = Math.random(); setToasts((t) => [...t, { id, msg }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500) }
-
-  // helpers
-  const roomFor = (fid) => d.rooms.find((r) => r.feature_id === fid)
-  const filesFor = (fid) => { const r = roomFor(fid); return (r && d.activity[r.room_id]) || [] }
-  const cardFor = (fid) => d.cards.find((c) => c.feature_id === fid && (c.status || 'open') === 'open')
+  const toast = (msg) => { const id = Math.random(); setToasts((t) => [...t, { id, msg }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200) }
+  const featureOf = (fid) => d.features.find((f) => f.feature_id === fid)
+  const titleOf = (fid) => featureOf(fid)?.title || fid
 
   const act = {
-    prioritize: async (fid, p) => { await post('/commands/prioritize', { feature_id: fid, priority: p }); toast(`Priority → P${p}`); refresh() },
-    markReady: async (fid) => { await post('/commands/mark_ready', { feature_id: fid }); toast('Marked ready'); refresh() },
-    stop: async (fid) => { await post(`/features/${fid}/stop`); toast(`Stopped ${fid}`); refresh() },
-    remove: async (fid) => { if (!window.confirm(`Remove ${fid}? Recorded in the ledger.`)) return; await del(`/features/${fid}`); setSel(null); toast(`Removed ${fid}`); refresh() },
-    sign: async (fid) => { const c = cardFor(fid); if (!c || !connected) return; const r = await signCard(c.card_id); toast(r.verified ? `Signed ${fid}` : `Rejected: ${r.reason || '?'}`); refresh() },
-    reject: async (fid) => { const c = cardFor(fid); if (!c || !connected) return; const r = await rejectCard(c.card_id); toast(r.verified ? `Declined ${fid}` : `Rejected: ${r.reason || '?'}`); refresh() },
+    sign: async (cardId, fid) => { if (!connected) return; setBusy(cardId); const r = await signCard(cardId); setBusy(''); toast(r.verified ? `Signed ${fid} — merged` : `Rejected: ${r.reason || 'verification failed'}`); refresh() },
+    reject: async (cardId, fid) => { if (!connected) return; setBusy(cardId); const r = await rejectCard(cardId); setBusy(''); toast(r.verified ? `Declined ${fid}` : `Rejected: ${r.reason || '?'}`); refresh() },
     newTask: async () => { const t = window.prompt('New task — feature title:'); if (t && t.trim()) { const r = await post('/features', { title: t.trim() }); toast(r.feature_id ? `Created ${r.feature_id}` : 'Failed'); refresh() } },
+    stop: async (fid) => { await post(`/features/${fid}/stop`); toast(`Stopped ${fid}`); refresh() },
   }
 
-  // filter
-  const visible = d.features.filter((f) => {
-    if (prio.size && !prio.has(f.priority)) return false
-    if (search.trim()) { const q = search.toLowerCase(); if (!`${f.feature_id} ${f.title}`.toLowerCase().includes(q)) return false }
-    return true
-  })
-
-  const h = d.health || {}; const alarms = h.sentinel?.alarms ?? 0; const halted = h.sentinel?.halted
-  const healthClass = halted ? 'alert' : alarms ? 'warn' : ''
-  const shipped = d.features.filter((f) => f.status === 'done').length
-  const live = d.features.filter((f) => isLive(f.status)).length
-  const openCards = d.cards.filter((c) => (c.status || 'open') === 'open').length
+  // ---- derived metrics (all from real endpoints) ----
+  const openCards = d.cards.filter((c) => (c.status || 'open') === 'open')
+  const liveFeatures = d.features.filter((f) => isLive(f.status))
+  const liveIds = liveFeatures.map((f) => f.feature_id)
+  const metaTrust = d.health.self_audit_meta_trust != null ? Math.round(d.health.self_audit_meta_trust * 100) : null
+  const lies = d.lies.total ?? 0
+  const inProgress = d.features.filter((f) => inProg(f.status)).length
+  const done = d.features.filter((f) => f.status === 'done').length
+  const stub = d.features.filter((f) => ['backlog', 'ready'].includes(f.status || 'backlog')).length
+  const halted = d.health.sentinel?.halted
+  const blocks = d.audit.filter((e) => e.event_type === 'action.decided').length
+  const budget = d.cost?.budget_used_pct ?? d.cost?.used_pct ?? null
+  const sessions = liveFeatures.length ? liveFeatures : d.features.filter((f) => f.status === 'awaiting_signature')
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand"><div className="brand-logo">T</div><div className="brand-name">THOR</div></div>
-        <div className="side-label">Workspace</div>
-        <div className="nav-item active">Task Board</div>
-        <div className="nav-item">Your call<span className="nav-count">{d.cards.filter((c) => (c.status || 'open') === 'open').length}</span></div>
-        <div className="nav-item">Bugs<span className="nav-count">{d.bugs.length}</span></div>
-        {pushSupported() && <div className="nav-item" onClick={async () => { const r = await enablePush(); toast(r.ok ? 'Notifications on' : `Push: ${r.reason}`) }}>🔔 Notifications</div>}
-        <div className="side-foot"><div className="side-avatar">S</div><div style={{ fontWeight: 500 }}>You</div></div>
-      </aside>
-
-      <main className="main">
-        <header className="topbar">
-          <div className="brand"><div className="brand-logo">T</div><div className="brand-name">THOR</div></div>
-          <div className="topbar-actions">
-            {openCards > 0 && <span className="topbar-pill">Your call · {openCards}</span>}
-            {pushSupported() && <button className="topbar-icon" aria-label="Notifications" onClick={async () => { const r = await enablePush(); toast(r.ok ? 'Notifications on' : `Push: ${r.reason}`) }}>🔔</button>}
-            <button className="btn btn-primary" onClick={act.newTask}>+ New</button>
-          </div>
-        </header>
-        <div className={`health ${healthClass}`} onClick={() => setHealthOpen((v) => !v)}>
-          <div className="health-dot" />
-          <div className="health-mid truncate">
-            <strong>{halted ? 'HALTED — a governor failed.' : alarms ? `${alarms} alarm — review.` : 'All systems nominal.'}</strong>
-            <span className="muted"> THOR is governing · {live} live · {connected ? 'synced' : 'disconnected'}</span>
-          </div>
-          <div className="health-meta">{connected ? 'live' : 'stale'}</div>
+    <div className="cto">
+      <header className="cto-top">
+        <button className="cto-logo-m" aria-label="THOR"><Bolt /></button>
+        <div className="cto-title">THOR Enterprise<span className="slash">/CTO</span></div>
+        <div className="cto-top-right">
+          <button className="ghost-btn" onClick={act.newTask}>+ New</button>
+          <span className={`conn ${connected ? '' : 'off'}`}><span className="conn-dot" />Thor<span className="conn-sep">·</span><span className="conn-state">{connected ? 'Connected' : 'Offline'}</span></span>
         </div>
-        <div className={`health-drawer ${healthOpen ? 'open' : ''}`}>
-          <div className="health-grid">
-            <Meter name="Sentinel" pill={halted ? 'halted' : 'alive'} warn={halted} sub={`fail-closed: ${h.sentinel?.fail_closed ? 'yes' : 'no'}`} />
-            <Meter name="Alarms" pill={`${alarms}`} warn={!!alarms} sub="canary checks" />
-            <Meter name="Auditor" pill={(h.selfaudit?.model || 'deterministic').slice(0, 10)} sub={`frontier $: ${h.selfaudit?.frontier_calls ?? 0}`} />
-            <Meter name="Meta-trust" pill={h.meta_trust != null ? `${Math.round(h.meta_trust * 100)}%` : '—'} sub="self-audit" />
-            <Meter name="Your call" pill={`${d.cards.filter((c) => (c.status || 'open') === 'open').length}`} sub="cards waiting" />
-            <Meter name="Live rooms" pill={`${d.rooms.length}`} sub="sealed rooms" />
-          </div>
-        </div>
+      </header>
 
-        <div className="board-head">
-          <div className="board-title">Task Board <span className="muted">· {d.features.length} tasks · {shipped} shipped</span></div>
-          <div className="board-actions">
-            {!connected && <span className="dpill" style={{ color: 'var(--alert)' }}>signing disabled</span>}
-            <button className="btn btn-primary" onClick={act.newTask}>+ New task</button>
-          </div>
-        </div>
+      <div className="cto-body">
+        <nav className="rail">
+          <div className="rail-logo"><Bolt /></div>
+          <button className="rail-ico active" title="Home"><Home /></button>
+          {pushSupported() && <button className="rail-ico" title="Notifications" onClick={async () => { const r = await enablePush(); toast(r.ok ? 'Notifications on' : `Push: ${r.reason}`) }}>🔔</button>}
+          <div className="rail-foot"><div className="rail-avatar">{OWNER[0]}</div></div>
+        </nav>
 
-        <div className="filter-bar">
-          {PRIOS.map(([lbl, p]) => (
-            <button key={p} className={`filter-pill ${prio.has(p) ? 'active' : ''}`} onClick={() => setPrio((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n })}>{lbl}</button>
-          ))}
-          <div className="filter-search">
-            <input placeholder="Search tasks…" value={search} onChange={(e) => setSearch(e.target.value)} />
-          </div>
-        </div>
+        <main className="cto-main">
+          <h1 className="greeting">{greetWord()}, {OWNER}</h1>
+          <p className="greet-sub">
+            You have <b className="o">{openCards.length} decision{openCards.length === 1 ? '' : 's'}</b> waiting
+            {liveIds.length > 0
+              ? <> and the agent is multi-tasking on <b className="g">Task — {liveIds.slice(0, 4).join(', ')}</b></>
+              : <> and the agent is <b className="g">idle — assign a task</b></>}
+          </p>
 
-        <div className="board">
-          {COLUMNS.map((col) => {
-            const items = visible.filter((f) => col.has(f.status))
-            const liveN = items.filter((f) => isLive(f.status)).length
-            return (
-              <div key={col.key} className="column">
-                <div className="column-head">
-                  <div className="column-title"><span className="column-dot" style={{ background: col.dot }} />{col.label}</div>
-                  <span className={`column-count ${liveN ? 'live' : ''}`}>{liveN ? `${liveN} live` : items.length}</span>
-                </div>
-                <div className="column-body">
-                  {items.length === 0
-                    ? <div className="column-empty">{search || prio.size ? 'No match' : col.key === 'backlog' ? 'Assign a task' : 'Empty'}</div>
-                    : items.map((f) => <Card key={f.feature_id} f={f} files={filesFor(f.feature_id)} connected={connected} act={act} open={(id) => { setSel(id); setTab('overview') }} />)}
-                </div>
+          <section className="statpanel">
+            <Stat n={pad2(openCards.length)} label="Decision waiting for you" />
+            <Stat n={metaTrust != null ? `${metaTrust}%` : '—'} label="System meta trust" />
+            <Stat n={`${lies}`} label="Lies caught" tone={lies > 0 ? 'red' : ''} />
+            <Stat n={`${inProgress}`} label="In progress task" />
+          </section>
+
+          <Section title="Need your decisions" accent={openCards.length ? `· ${openCards.length} decision${openCards.length === 1 ? '' : 's'} today` : ''}>
+            {openCards.length === 0
+              ? <div className="cto-empty">Nothing needs your signature right now. THOR is governing.</div>
+              : openCards.map((c) => (
+                <Decision key={c.card_id} card={c} title={titleOf(c.feature_id)} feature={featureOf(c.feature_id)}
+                  busy={busy === c.card_id} connected={connected} act={act} />
+              ))}
+          </Section>
+
+          <Section title="Featured status">
+            <div className="featured">
+              <div className="featured-row">
+                <Fcard label="Done" n={done} tone="green" />
+                <Fcard label="In Progress" n={inProgress} tone="orange" />
+                <Fcard label="Stub" n={stub} />
               </div>
-            )
-          })}
-        </div>
-      </main>
+              <div className="featured-caps">
+                <span>Done = merged features</span>
+                <span>Counts come from the manager's Kanban</span>
+                <span>In Progress = Building / QA / awaiting signature</span>
+              </div>
+            </div>
+          </Section>
+        </main>
 
-      <Drawer fid={sel} d={d} tab={tab} setTab={setTab} connected={connected} act={act}
-        roomFor={roomFor} filesFor={filesFor} cardFor={cardFor} close={() => setSel(null)} />
+        <aside className="session">
+          <div className="session-label">Active Session</div>
+          {sessions.length === 0
+            ? <div className="session-empty">No live session.<br />Assign a task to wake the agent.</div>
+            : sessions.slice(0, 8).map((f, i) => (
+              <button key={f.feature_id} className={`scard ${i === 0 && isLive(f.status) ? 'hot' : ''}`}
+                onClick={() => isLive(f.status) && act.stop(f.feature_id)} title={isLive(f.status) ? 'Click to stop' : ''}>
+                <div className="scard-top"><span className="scard-id">{f.feature_id}</span><span className="scard-sep">·</span><span className="scard-agent">Claude</span>
+                  {isLive(f.status) && <span className="scard-live"><span className="dot" />live</span>}
+                </div>
+                <div className="scard-title">{f.title}</div>
+              </button>
+            ))}
+        </aside>
+      </div>
+
+      <footer className="cto-foot">
+        <span className={`foot-item ${halted ? 'bad' : ''}`}><span className={`fdot ${halted ? 'bad' : 'ok'}`} />{halted ? 'Watchdog HALTED' : 'Watchdog active'}</span>
+        <i>·</i><span className="foot-item">4 Layers</span>
+        <i>·</i><span className="foot-item">{blocks} Blocks Today</span>
+        <i>·</i><span className="foot-item"><span className={`fdot ${liveIds.length ? 'ok' : 'idle'}`} />{liveIds.length ? 'Claude Session Live' : 'Agent idle'}</span>
+        {liveIds.length ? <><i>·</i><span className="foot-item">{liveIds[0]}</span></> : null}
+        {budget != null ? <><i>·</i><span className="foot-item">{Math.round(budget)}% Budget</span></> : null}
+      </footer>
 
       <div className="toast-wrap">{toasts.map((t) => <div key={t.id} className="toast">{t.msg}</div>)}</div>
     </div>
   )
 }
 
-const Meter = ({ name, pill, sub, warn }) => (
-  <div className="meter"><div className="meter-head"><span>{name}</span><span className={`meter-pill ${warn ? 'warn' : ''}`}>{pill}</span></div><div className="meter-sub truncate">{sub}</div></div>
+/* ---------- presentational ---------- */
+const Stat = ({ n, label, tone }) => (
+  <div className="stat">
+    <div className={`stat-n ${tone || ''}`}>{n}</div>
+    <div className={`stat-l ${tone || ''}`}>{label}</div>
+  </div>
 )
-const prioClass = (p) => `prio p${p ?? 3}`
-const ownerOf = (f) => (isLive(f.status) ? 'claude' : 'human')
-const avChar = (o) => (o === 'claude' ? 'C' : o === 'cto' ? '◆' : 'S')
 
-function Card({ f, files, connected, act, open }) {
-  const live = isLive(f.status)
-  const curFile = live ? (files.find((a) => a.decision === 'allow') || files[0])?.file : null
-  const alarm = f.open_bugs > 0 && live
-  return (
-    <div className={`card ${live ? 'live' : ''} ${f.status === 'done' ? 'done' : ''} ${alarm ? 'alarm' : ''}`} onClick={() => open(f.feature_id)}>
-      <div className="card-top">
-        <span className="tag feature">feature</span>
-        <span className={prioClass(f.priority)}>P{f.priority ?? 3}</span>
-      </div>
-      <div className="card-title clamp-2">{f.title}</div>
-      {live && (
-        <>
-          <div className="progress"><div className="progress-fill" style={{ width: `${f.progress}%` }} /></div>
-          <div className="live-bar"><span className="live-bar-dot" /><span className="live-bar-file" title={curFile || ''}>{curFile || STATUS_LABEL[f.status]}</span></div>
-        </>
-      )}
-      {alarm && <div className="card-alert"><span className="card-alert-ico">!</span><span>{f.open_bugs} open bug — review</span></div>}
-      {f.status !== 'done' && (
-        <div className="card-foot">
-          <div className={`avatar ${ownerOf(f)}`}>{avChar(ownerOf(f))}</div>
-          <span className="truncate">{f.feature_id}</span>
-          <span className="card-est">{STATUS_LABEL[f.status]}</span>
-        </div>
-      )}
-      {f.status === 'done' && <div className="card-done-foot">✓ shipped</div>}
-      {live && (
-        <div className="live-actions">
-          <button className="live-btn stop" onClick={(e) => { e.stopPropagation(); act.stop(f.feature_id) }}>Stop</button>
-          <button className="live-btn" onClick={(e) => { e.stopPropagation(); open(f.feature_id) }}>Open</button>
-        </div>
-      )}
+const Section = ({ title, accent, children }) => (
+  <section className="cto-sec">
+    <div className="sec-head">
+      <div className="sec-title">{title}{accent ? <span className="sec-accent"> {accent}</span> : null}</div>
+      <button className="viewall">View All ›</button>
     </div>
-  )
-}
+    {children}
+  </section>
+)
 
-function Drawer({ fid, d, tab, setTab, connected, act, roomFor, filesFor, cardFor, close }) {
-  const f = d.features.find((x) => x.feature_id === fid)
-  const bugs = (d.bugs || []).filter((b) => b.feature_id === fid)
-  const files = fid ? filesFor(fid) : []
-  const room = fid ? roomFor(fid) : null
-  const card = fid ? cardFor(fid) : null
-  const activity = (d.audit || []).filter((e) => e.feature_id === fid)
-  const gov = files.filter((a) => a.decision)
-  const allows = gov.filter((a) => a.decision === 'allow').length
-  const denies = gov.filter((a) => a.decision === 'deny').length
+const Fcard = ({ label, n, tone }) => (
+  <div className="fcard">
+    <div className={`fcard-l ${tone || ''}`}>{label}</div>
+    <div className="fcard-n">{n}</div>
+  </div>
+)
 
-  const Tab = ({ id, label, n }) => (
-    <div className={`dtab ${tab === id ? 'active' : ''}`} onClick={() => setTab(id)}>{label}{n != null && <span className="tc">{n}</span>}</div>
-  )
-
+function Decision({ card, title, feature, busy, connected, act }) {
+  const kind = (card.type || 'merge').toLowerCase()
+  const tag = kind.includes('depend') ? { cls: 'dep', ico: '📦', label: 'Dependency' }
+    : kind.includes('merge') ? { cls: 'merge', ico: '◆', label: 'Merge' }
+      : { cls: 'maint', ico: '●', label: kind }
   return (
-    <>
-      <div className={`scrim ${f ? 'open' : ''}`} onClick={close} />
-      <aside className={`drawer ${f ? 'open' : ''}`} role="dialog" aria-hidden={!f}>
-        {f && (
-          <>
-            <div className="drawer-head">
-              <div className="drawer-crumb"><span>Task Board</span><span>/</span><span>{STATUS_LABEL[f.status]}</span><span>{f.feature_id}</span>
-                <button className="drawer-close" onClick={close}>✕</button>
-              </div>
-              <div className="drawer-title break">{f.title}</div>
-              <div className="drawer-meta">
-                <span className="dpill"><span className="tag feature" style={{ padding: '1px 5px', fontSize: 9.5 }}>feature</span></span>
-                <span className="dpill"><span className={prioClass(f.priority)} style={{ margin: 0 }}>P{f.priority ?? 3}</span></span>
-                <span className="dpill"><span className="label">status</span>{STATUS_LABEL[f.status]}</span>
-                {f.open_bugs ? <span className="dpill" style={{ background: 'var(--alert-tint)', color: 'var(--alert)' }}>{f.open_bugs} bug</span> : null}
-              </div>
-            </div>
-
-            <div className="drawer-tabs">
-              <Tab id="overview" label="Overview" />
-              <Tab id="activity" label="Activity" n={activity.length} />
-              <Tab id="governance" label="Governance" n={gov.length} />
-              <Tab id="files" label="Files" n={files.length} />
-            </div>
-
-            <div className="drawer-body">
-              {tab === 'overview' && (
-                <>
-                  <div className="psec">
-                    <div className="plabel">SDLC progress</div>
-                    <div className="progress" style={{ height: 6 }}><div className={`progress-fill ${f.status === 'done' ? 'done' : ''}`} style={{ width: `${f.progress}%` }} /></div>
-                    <div className="meter-sub" style={{ marginTop: 6 }}>{f.progress}% · {STATUS_LABEL[f.status]}</div>
-                  </div>
-                  <div className="psec">
-                    <div className="plabel">Properties</div>
-                    <dl className="pprops">
-                      <dt>Task ID</dt><dd className="mono">{f.feature_id}</dd>
-                      <dt>Status</dt><dd>{STATUS_LABEL[f.status]}</dd>
-                      <dt>Priority</dt><dd>P{f.priority ?? 3}</dd>
-                      {room && <><dt>Room</dt><dd className="mono break">{room.room_id}{room.address ? ` · ${room.address}` : ''}</dd></>}
-                      <dt>Open bugs</dt><dd>{f.open_bugs || 0}</dd>
-                    </dl>
-                  </div>
-                  <div className="psec">
-                    <div className="plabel">Actions</div>
-                    <div className="actions-row">
-                      {card && <button className="btn btn-ok" disabled={!connected} onClick={() => { act.sign(fid); close() }}>Sign</button>}
-                      {card && <button className="btn btn-bad" disabled={!connected} onClick={() => { act.reject(fid); close() }}>Reject</button>}
-                      {PRIOS.map(([lbl, p]) => <button key={p} className="btn" onClick={() => act.prioritize(fid, p)}>{lbl}</button>)}
-                      <button className="btn" onClick={() => act.markReady(fid)}>Mark ready</button>
-                      {isLive(f.status) && <button className="btn btn-bad" onClick={() => act.stop(fid)}>Stop work</button>}
-                      <button className="btn btn-bad" onClick={() => act.remove(fid)}>Remove</button>
-                    </div>
-                  </div>
-                  <div className="psec">
-                    <div className="plabel">Bugs ({bugs.length})</div>
-                    {bugs.length === 0 ? <div className="muted">None.</div> : bugs.map((b) => <div key={b.bug_id} className="file-row break"><span style={{ flex: 1 }}>{b.description}</span><span className={`file-act ${b.status === 'open' ? 'block' : 'read'}`}>{b.status}</span></div>)}
-                  </div>
-                </>
-              )}
-
-              {tab === 'activity' && (activity.length === 0
-                ? <div className="empty">No activity yet.</div>
-                : activity.slice(-60).reverse().map((e, i) => (
-                  <div key={i} className="gov-row"><span className="mono" style={{ color: 'var(--ink-4)', fontSize: 11 }}>#{e.seq}</span><span><b>{e.event_type}</b> <span className="muted">{e.room_id || ''}</span></span></div>
-                )))}
-
-              {tab === 'governance' && (gov.length === 0
-                ? <div className="empty">No governance events yet.</div>
-                : <>
-                  <div className="gov-stats">
-                    <div className="gstat"><div className="gstat-v ok">{allows}</div><div className="gstat-l">Allowed</div></div>
-                    <div className="gstat"><div className="gstat-v block">{denies}</div><div className="gstat-l">Denied</div></div>
-                    <div className="gstat"><div className="gstat-v">{gov.length}</div><div className="gstat-l">Total</div></div>
-                  </div>
-                  {gov.map((a, i) => (
-                    <div key={i} className="gov-row"><span className={`gverb ${a.decision}`}>{a.decision}</span><span className="break"><b className="mono">{a.file || a.tool}</b> {a.reason ? <span className="muted">· {a.reason}</span> : ''}</span></div>
-                  ))}
-                </>)}
-
-              {tab === 'files' && (files.length === 0
-                ? <div className="empty">No files touched yet.</div>
-                : files.map((a, i) => (
-                  <div key={i} className="file-row"><span className="file-path" title={a.file || ''}>{a.file || a.tool}</span><span className={`file-act ${a.decision || 'read'}`}>{a.decision || 'read'}</span></div>
-                )))}
-            </div>
-          </>
-        )}
-      </aside>
-    </>
+    <article className="dcard">
+      <span className={`dtag ${tag.cls}`}><span className="dtag-ico">{tag.ico}</span>{tag.label}</span>
+      <h3 className="dcard-title">{title}</h3>
+      <p className="dcard-desc">
+        THOR's verdict passed against reality — your signature merges this into <b>main</b>.
+        {feature?.open_bugs ? ` ${feature.open_bugs} open bug flagged.` : ' No open bugs.'}
+      </p>
+      <div className="dcard-meta">
+        <Meta ico="◷" text={`Pending · ${card.feature_id}`} />
+        <Meta ico="◰" text={feature ? feature.title.slice(0, 22) : 'feature'} />
+        <Meta ico="◳" text={`card ${String(card.card_id).slice(0, 8)}`} />
+      </div>
+      <div className="dcard-acts">
+        <button className="btn-black" disabled={!connected || busy} onClick={() => act.sign(card.card_id, card.feature_id)}>{busy ? 'Signing…' : 'Approve'}</button>
+        <button className="btn-out" disabled={!connected || busy} onClick={() => act.reject(card.card_id, card.feature_id)}>Reject</button>
+      </div>
+    </article>
   )
 }
+const Meta = ({ ico, text }) => <span className="dmeta"><span className="dmeta-ico">{ico}</span>{text}</span>
+
+const Bolt = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z" /></svg>)
+const Home = () => (<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" /></svg>)
