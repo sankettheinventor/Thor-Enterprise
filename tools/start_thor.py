@@ -116,7 +116,24 @@ def _pg_reachable() -> bool:
         return False
 
 
+def _auth_guard() -> None:
+    """Refuse to boot a NETWORK-EXPOSED plane with NO authentication. Auth is OPEN when neither
+    THOR_API_TOKEN nor THOR_USERS (RBAC) is set — fine for a localhost dev box (HOST=127.0.0.1), but a
+    plane bound to 0.0.0.0 (the compose / k8s posture) would then expose its mutating surface to the network
+    with no credential. Fail fast with the fix. `THOR_ALLOW_OPEN=1` is a loud, explicit escape hatch."""
+    import rbac
+    host = os.environ.get("THOR_BIND_HOST", "127.0.0.1")
+    exposed = host not in ("127.0.0.1", "localhost", "::1")
+    has_auth = bool(os.environ.get("THOR_API_TOKEN")) or rbac.rbac_enabled()
+    if exposed and not has_auth and os.environ.get("THOR_ALLOW_OPEN") != "1":
+        sys.exit(
+            f"[thor] REFUSING TO BOOT: bound to {HOST} (network-exposed) with NO authentication.\n"
+            "        Set THOR_API_TOKEN=<strong secret>  OR  THOR_USERS=<RBAC roster JSON>.\n"
+            "        (Localhost dev is exempt; THOR_ALLOW_OPEN=1 overrides this — do NOT in production.)")
+
+
 def boot() -> list[tuple[object, int]]:
+    _auth_guard()   # security: never start an open plane on a network-reachable bind
     # ---- 1) DB — the single ledger backend ----
     if _pg_reachable():
         print(f"[thor] DB        Postgres reachable at {pg.DSN}")
