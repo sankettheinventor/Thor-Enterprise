@@ -1,7 +1,9 @@
 // THOR cockpit service worker — makes the app installable + loads instantly, WITHOUT ever caching live
 // governance data. It caches ONLY the static app shell (under /app/). Every API + the SSE /stream pass
 // straight to the network, so the phone never shows a stale ledger, verdict, or card (no stale truth).
-const CACHE = 'thor-cockpit-v1'
+// Bump on every shell change so the activate handler purges the previous cache — otherwise a redeploy with
+// new hashed asset names keeps serving the OLD cached index and the app renders a blank screen.
+const CACHE = 'thor-cockpit-v3'
 const SHELL = ['/app/', '/app/index.html', '/app/manifest.webmanifest', '/app/icon.svg']
 
 self.addEventListener('install', (e) => {
@@ -18,8 +20,21 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url)
-  // Only the static shell is cached. API/stream/anything else -> network only (live truth, never stale).
   if (e.request.method !== 'GET' || !url.pathname.startsWith('/app/') || url.pathname === '/app/stream') {
+    return  // API / stream / non-GET -> straight to network (live truth, never cached)
+  }
+  // The HTML SHELL is NETWORK-FIRST: always fetch the latest index so it references the CURRENT hashed
+  // assets after a redeploy (this is what prevents the stale-shell blank screen); fall back to cache only
+  // when offline. Content-hashed assets are immutable -> cache-first for instant loads.
+  const isShell = e.request.mode === 'navigate' || url.pathname === '/app/' || url.pathname === '/app/index.html'
+  if (isShell) {
+    e.respondWith(
+      fetch(e.request).then((resp) => {
+        const copy = resp.clone()
+        caches.open(CACHE).then((c) => c.put('/app/index.html', copy))
+        return resp
+      }).catch(() => caches.match('/app/index.html').then((h) => h || caches.match('/app/')))
+    )
     return
   }
   e.respondWith(
