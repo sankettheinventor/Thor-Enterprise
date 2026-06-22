@@ -5,10 +5,13 @@ Two deployment shapes are provided. **Honest status** is given for each — what
 ## A) Single host (Docker) — `docker-compose.prod.yml`  ✅ verified
 
 The control plane runs as a container; Postgres as a service; sealed ROOM containers are created as
-siblings via the host Docker socket. The control-plane **image builds**, **boots against an external
-Postgres**, **serves on `0.0.0.0`**, and **enforces bearer auth** — all verified by `docker run`
-(see the campaign log; compose itself needs the Docker Compose v2 plugin, absent in the build env, so
-the equivalent `docker run` was used to verify).
+siblings via the host Docker socket. **Verified end-to-end by actually running `docker compose -f
+docker-compose.prod.yml up`** (2026-06-22): all 5 services come up (postgres + controlplane + caddy + gitea
++ pgbackup), the controlplane becomes healthy against the external Postgres, the cockpit is reachable over
+**Caddy TLS (`https://localhost/app/` → 200)**, `/metrics` serves, **bearer auth is enforced** (no token →
+401, token → 200), the **pgbackup backup → restore round-trips data**, and 40 concurrent authed writes all
+commit with the **ledger hash-chain intact**. (The controlplane waits for the external DB; it never
+bootstraps its own Postgres when `THOR_PG_DSN` is set.)
 
 ```sh
 export THOR_API_TOKEN=$(openssl rand -hex 32)        # REQUIRED
