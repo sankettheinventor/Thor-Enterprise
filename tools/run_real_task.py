@@ -32,19 +32,25 @@ import docker
 COOK = os.environ.setdefault("THOR_COOK", "claude-code")
 if COOK == "claude-code":
     os.environ.setdefault("THOR_COOK_IMAGE", "thor-room-claude:latest")
-    if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        sys.exit("CLAUDE_CODE_OAUTH_TOKEN is not set.\n"
-                 "  Run `claude setup-token` on a machine logged into your Claude subscription, then:\n"
-                 "    export CLAUDE_CODE_OAUTH_TOKEN=<the token>\n"
-                 "  (This uses your subscription — NO per-token API cost. Or set THOR_COOK=generic for your own agent.)")
+    from cook.runtime import discover_claude_oauth
+    if not discover_claude_oauth():
+        sys.exit("No Claude login found.\n"
+                 "  THOR reuses your EXISTING Claude Code login (your current plan — NO per-token API cost):\n"
+                 "  log into Claude Code on this machine, or set THOR_CLAUDE_CREDENTIALS=/path/.credentials.json\n"
+                 "  (or CLAUDE_CODE_OAUTH_TOKEN). Or set THOR_COOK=generic for your own agent.")
 
 SCOPE = os.environ.get("THOR_TASK_SCOPE", "src/util.py")
 TESTF = os.environ.get("THOR_TASK_TEST", "src/test_util.py")
 DESC = os.environ.get("THOR_TASK_DESC",
                       "Add a function slugify(text) that returns a URL-safe slug: lowercase, spaces and "
                       "underscores become single hyphens, drop every other non-alphanumeric, collapse "
-                      "repeated hyphens, and strip leading/trailing hyphens. Add a real test that asserts "
-                      "slugify('Hello,  World!') == 'hello-world'.")
+                      "repeated hyphens, and strip leading/trailing hyphens.")
+# The cook must write the IMPLEMENTATION in SCOPE and the TEST in TESTF (the verdict RUNS exactly that
+# test file), and the test must actually exercise the new code so it can go red — spell it out for the agent.
+DESC += (f" Put the implementation in {SCOPE} and a real test in {TESTF} that imports from {SCOPE} and "
+         f"asserts slugify('Hello,  World!') == 'hello-world'. IMPORTANT: the test is executed directly as "
+         f"`python3 {TESTF}` (NOT pytest), so its assertions must RUN when the file is executed — put them "
+         f"at module level (or call your test functions at the bottom), and print 'ok' at the end.")
 
 from contract.seam import Seam  # noqa: E402
 from contract.slice_builder import build_slice  # noqa: E402
@@ -86,10 +92,10 @@ mgr.register_operator(pub)
 
 fid = "TASK1"
 feature = {"feature_id": fid, "task_type": "build", "acceptance_criteria": [DESC],
-           "scope_files": [SCOPE], "planned_test": TESTF, "regression_file": TESTF, "code_file": SCOPE}
+           "scope_files": [SCOPE, TESTF], "planned_test": TESTF, "regression_file": TESTF, "code_file": SCOPE}
 seam = Seam(InProcessTransport(), manager=mgr)
 seam.manager_send("assign_task", {"room_id": "room-assign",
-                  "feature_slice": build_slice(feature, {"scope_files": [SCOPE]}).model_dump()})
+                  "feature_slice": build_slice(feature, {"scope_files": [SCOPE, TESTF]}).model_dump()})
 
 print("[task] the cook is building in a sealed one-door room (this is the real agent — it may take a minute)...")
 out = BuildStage().execute(feature=feature, repo=repo, manager=mgr)
@@ -101,9 +107,13 @@ result = mgr.run_verdict(fid, branch, repo)
 print(f"[task] VERDICT = {result['verdict'].upper()}  ({result.get('reason', '')})")
 
 if result["verdict"] != "done":
-    diff = subprocess.run(["git", "-C", repo, "diff", "main..." + branch], capture_output=True, text=True).stdout
     print("\n[task] the verdict was NOT 'done' — THOR refuses to merge unproven work (this is correct).")
-    print("[task] what the cook actually changed:\n" + (diff[:1500] or "(no diff)"))
+    for b in result.get("blockers", []):
+        print(f"[task]   blocker: {b.get('probe')} — {b.get('detail')}")
+    failed = [n for n, p in (result.get("probes") or {}).items() if not p.get("pass")]
+    print(f"[task]   probes failed: {failed}")
+    diff = subprocess.run(["git", "-C", repo, "diff", "main..." + branch], capture_output=True, text=True).stdout
+    print("[task] what the cook actually changed:\n" + (diff[:1800] or "(no diff)"))
     sys.exit(0)
 
 # human signs (Ed25519 + one-time nonce) -> real merge into main

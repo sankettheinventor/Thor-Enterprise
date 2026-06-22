@@ -184,11 +184,18 @@ def _gut_function_bodies(src: str) -> str:
 
 # Stdlib line tracer for the SEALED sandbox (the room image has no `coverage` module, and we must never
 # run cook code on the host). It prints the executed line numbers of the contracted source as THOR_COV:[...].
+# It MUST execute the test exactly as M1 does (`python3 <test>`): put the test's OWN directory on sys.path[0]
+# (runpy.run_path does NOT do this) so a normal import (`from util import ...`) resolves the same way it does
+# under M1 — otherwise the import fails only here and the test looks falsely "hollow". Filename match is
+# robust to absolute/relative paths (endswith the target, or same basename).
 _TRACER = (
-    "import sys, json, runpy\n"
+    "import sys, os, json, runpy\n"
     "tgt, test, ex = sys.argv[1], sys.argv[2], set()\n"
+    "sys.path.insert(0, os.path.dirname(os.path.abspath(test)) or '.')\n"
+    "base = os.path.basename(tgt)\n"
     "def _t(fr, ev, a):\n"
-    "    if ev == 'line' and fr.f_code.co_filename.endswith(tgt): ex.add(fr.f_lineno)\n"
+    "    fn = fr.f_code.co_filename\n"
+    "    if ev == 'line' and (fn.endswith(tgt) or os.path.basename(fn) == base): ex.add(fr.f_lineno)\n"
     "    return _t\n"
     "sys.settrace(_t)\n"
     "try: runpy.run_path(test, run_name='__main__')\n"

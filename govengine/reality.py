@@ -78,7 +78,10 @@ def sandboxed_run(repo: str, argv: list[str], *, timeout: int = 30, prepare=None
             security_opt=["no-new-privileges"], mem_limit="512m", pids_limit=256,
             tmpfs={"/tmp": "", "/home/cook": "uid=1000,gid=1000"},
             environment={"PYTHONDONTWRITEBYTECODE": "1", "HOME": "/home/cook",
-                         "PATH": "/usr/local/bin:/usr/bin:/bin"},
+                         "PATH": "/usr/local/bin:/usr/bin:/bin",
+                         # the repo ROOT is importable, so a normal package import in the cook's test
+                         # (`from src.util import ...`) works — matching how real test suites are run.
+                         "PYTHONPATH": "/work"},
             detach=True)
         try:
             rc = container.wait(timeout=timeout).get("StatusCode", 1)
@@ -142,7 +145,8 @@ def run_test(repo: str, test_relpath: str | None, argv: list[str] | None = None)
         rc, out, _ = sandboxed_run(repo, argv)
         return rc, out
     try:                                                   # docker-free gated suite (trusted fixtures)
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=repo, env=_minimal_env())
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=repo,
+                           env={**_minimal_env(), "PYTHONPATH": repo})   # repo root importable (package imports)
         return p.returncode, (p.stdout + p.stderr)
     except FileNotFoundError as e:                         # the language runtime is absent from the image
         return 127, f"test runner not available ({e}) — the room image lacks this language's runtime"

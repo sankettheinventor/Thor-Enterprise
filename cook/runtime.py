@@ -17,9 +17,41 @@ Manager-side cook-runner; it is the live integration that also needs the one-doo
 """
 from __future__ import annotations
 
+import glob
+import json
 import os
 import shlex
+import time
 from abc import ABC, abstractmethod
+
+
+def discover_claude_oauth() -> str | None:
+    """Reuse the user's EXISTING Claude login — their CURRENT plan, NO extra API cost, NO manual setup-token.
+
+    Order: an explicit CLAUDE_CODE_OAUTH_TOKEN wins; else read the OAuth access token straight from the
+    Claude Code credentials file the user is already logged into. That file is `~/.claude/.credentials.json`
+    (or `$THOR_CLAUDE_CREDENTIALS`); when THOR runs in WSL but the user logged in on Windows, the same file
+    is visible at `/mnt/c/Users/<name>/.claude/.credentials.json`, so we glob that too. Only the short-lived
+    `accessToken` is taken (never the refreshToken) and only if it is unexpired — least privilege. Returns
+    the token or None."""
+    tok = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    if tok:
+        return tok
+    candidates: list[str] = []
+    if os.environ.get("THOR_CLAUDE_CREDENTIALS"):
+        candidates.append(os.environ["THOR_CLAUDE_CREDENTIALS"])
+    candidates.append(os.path.expanduser("~/.claude/.credentials.json"))
+    candidates += sorted(glob.glob("/mnt/c/Users/*/.claude/.credentials.json"))
+    for path in candidates:
+        try:
+            with open(path, encoding="utf-8") as f:
+                oauth = (json.load(f) or {}).get("claudeAiOauth") or {}
+        except (OSError, ValueError):
+            continue
+        at, exp = oauth.get("accessToken"), oauth.get("expiresAt")
+        if at and (not exp or exp / 1000 > time.time()):
+            return at
+    return None
 
 
 def task_prompt(feature_slice: dict) -> str:
@@ -82,7 +114,7 @@ class ClaudeCodeRuntime(CookRuntime):
                 "--permission-mode", "acceptEdits", "--output-format", "json"]
 
     def env(self) -> dict:
-        tok = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+        tok = discover_claude_oauth()      # reuse the user's existing Claude login (their plan, no API cost)
         return {"CLAUDE_CODE_OAUTH_TOKEN": tok} if tok else {}
 
     def egress_allowlist(self) -> tuple[str, ...]:
@@ -91,12 +123,14 @@ class ClaudeCodeRuntime(CookRuntime):
         return env or ("api.anthropic.com", "claude.ai", "console.anthropic.com", "statsig.anthropic.com")
 
     def preflight(self) -> list[str]:
-        """Fail fast on a misconfigured frontier deploy: the live Claude Code cook authenticates with an
-        operator-supplied OAuth token (`claude setup-token`). Without it the cook would launch and only fail
-        opaquely inside the sealed room — so surface the exact fix here, before provisioning."""
-        if not os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-            return ["CLAUDE_CODE_OAUTH_TOKEN is not set — run `claude setup-token` and export it "
-                    "(the frontier cook authenticates with it; THOR injects no model key)"]
+        """Fail fast (before provisioning) only when NO Claude login can be found. THOR reuses the user's
+        EXISTING Claude Code login (their current plan — no extra API cost), auto-discovered from the
+        credentials file; an explicit CLAUDE_CODE_OAUTH_TOKEN also works. Otherwise it would fail opaquely
+        inside the sealed room."""
+        if not discover_claude_oauth():
+            return ["No Claude login found. Log into Claude Code on this machine (the credentials file at "
+                    "~/.claude/.credentials.json), or set THOR_CLAUDE_CREDENTIALS / CLAUDE_CODE_OAUTH_TOKEN. "
+                    "THOR reuses your existing plan — no API key, no extra cost."]
         return []
 
 
