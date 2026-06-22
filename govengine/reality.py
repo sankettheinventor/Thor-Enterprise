@@ -34,6 +34,14 @@ def _use_sandbox() -> bool:
     return bool(os.environ.get("THOR_COOK")) and os.environ.get("THOR_VERIFY_SANDBOX", "1") != "0"
 
 
+def _verify_image() -> str:
+    """The image the SEALED verdict runs the cook's test in. Defaults to the Python room image, but a
+    non-Python project needs the right toolchain (e.g. node for JS/TS, go, ...) — set THOR_VERIFY_IMAGE to a
+    polyglot image (the bundled `thor-room-claude` has python3 + node). The cook's image is separate."""
+    from wall import config
+    return os.environ.get("THOR_VERIFY_IMAGE") or config.ROOM_IMAGE
+
+
 def _minimal_env() -> dict:
     return {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
             "HOME": os.environ.get("HOME", "/tmp"), "PYTHONDONTWRITEBYTECODE": "1"}
@@ -72,7 +80,7 @@ def sandboxed_run(repo: str, argv: list[str], *, timeout: int = 30, prepare=None
             prepare(dst)
         client = _docker.from_env()
         container = client.containers.run(
-            config.ROOM_IMAGE, entrypoint="", command=["sh", "-c", " ".join(shlex.quote(a) for a in argv)],
+            _verify_image(), entrypoint="", command=["sh", "-c", " ".join(shlex.quote(a) for a in argv)],
             working_dir="/work", mounts=[_docker.types.Mount("/work", dst, type="bind")],
             network_disabled=True, read_only=True, user="cook", cap_drop=["ALL"],
             security_opt=["no-new-privileges"], mem_limit="512m", pids_limit=256,
@@ -169,7 +177,7 @@ def _prep_build(dst: str) -> bool:
     try:
         client = _docker.from_env()
         container = client.containers.run(
-            config.ROOM_IMAGE, entrypoint="", command=["sh", "-c", script], working_dir="/work",
+            _verify_image(), entrypoint="", command=["sh", "-c", script], working_dir="/work",
             mounts=[_docker.types.Mount("/work", dst, type="bind")],
             network_disabled=False,            # TRUSTED PREP needs the network to build + fetch declared deps
             cap_drop=["ALL"], security_opt=["no-new-privileges"], mem_limit="1536m", pids_limit=512,
