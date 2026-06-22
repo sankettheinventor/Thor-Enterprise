@@ -79,10 +79,11 @@ def sandboxed_run(repo: str, argv: list[str], *, timeout: int = 30, prepare=None
             tmpfs={"/tmp": "", "/home/cook": "uid=1000,gid=1000"},
             environment={"PYTHONDONTWRITEBYTECODE": "1", "HOME": "/home/cook",
                          "PATH": "/usr/local/bin:/usr/bin:/bin",
-                         # the project is importable like a real test suite: both the repo ROOT (flat layout,
-                         # `from src.util import ...`) AND `src/` (src-layout, `from humanize import ...` for a
-                         # package under src/) are on the path — the two dominant real-world conventions.
-                         "PYTHONPATH": "/work:/work/src"},
+                         # the project is importable like a real test suite: `src/` (src-layout) FIRST so the
+                         # editable source (with generated build artifacts) shadows any built copy, then the
+                         # repo ROOT (flat layout), then `.thor_libs` (declared deps installed by the trusted
+                         # prep phase, if any). These are the dominant real-world conventions.
+                         "PYTHONPATH": "/work/src:/work:/work/.thor_libs"},
             detach=True)
         try:
             rc = container.wait(timeout=timeout).get("StatusCode", 1)
@@ -104,6 +105,91 @@ def sandboxed_run(repo: str, argv: list[str], *, timeout: int = 30, prepare=None
             except Exception:  # noqa: BLE001
                 pass
         shutil.rmtree(work, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# TRUSTED PROJECT PREP (real installable repos). The sealed verdict runs the cook's UNTRUSTED test offline,
+# so it cannot itself install deps or run a build. But a real package needs a build/install first (e.g.
+# setuptools-scm generates `_version.py`; third-party deps must be importable). So we split it:
+#   1) TRUSTED PREP (network ON, one ephemeral container): build the project + install its DECLARED deps
+#      into the worktree copy. This runs the PROJECT's build backend (trusted) and installs the user's own
+#      declared deps — it does NOT execute the cook's runtime modules (an editable build only links them).
+#   2) SEALED TEST (network OFF): the cook's untrusted test runs against the prepared copy, as always.
+# SECURITY: prep is SKIPPED if the cook's diff touches ANY build/config file (setup.py / pyproject / etc.) —
+# those changes already ESCALATE to a human (engine._stakes), and we must never run a cook-tampered build.
+_BUILD_FILES = {"setup.py", "setup.cfg", "pyproject.toml", "manifest.in", "tox.ini", "noxfile.py",
+                "conftest.py", "meson.build", "cmakelists.txt", "makefile", "build.py"}
+
+
+def _is_build_file(path: str) -> bool:
+    base = os.path.basename(path).lower()
+    return (base in _BUILD_FILES or base.startswith("requirements")
+            or base.endswith((".cfg", ".toml", ".in")))
+
+
+def prepare_project(repo: str, changed_files) -> str:
+    """Return a PREPARED copy of `repo` (build artifacts generated + declared deps installed) for the test
+    runs, or `repo` unchanged when prep is not applicable/eligible. Only runs for a real cook (THOR_COOK set,
+    sealed verdicts); the gated trusted suite is self-contained and skips this."""
+    if not _use_sandbox() or os.environ.get("THOR_VERIFY_PREP", "1") == "0":
+        return repo
+    if not any(os.path.exists(os.path.join(repo, m)) for m in ("pyproject.toml", "setup.py", "setup.cfg")):
+        return repo                                   # not an installable project — nothing to build
+    if any(_is_build_file(f) for f in (changed_files or [])):
+        return repo                                   # cook touched a build file -> never run that build (escalates)
+    work = tempfile.mkdtemp(prefix="thor-prep-")
+    dst = os.path.join(work, "r")
+    try:
+        # KEEP .git in the PREP copy — setuptools-scm and friends derive the version from git history; the
+        # SEALED test copies (sandboxed_run) still exclude .git. Strip hooks so a cook-planted git hook can't
+        # run during the build (the prep container is isolated + ephemeral, but defence in depth).
+        shutil.copytree(repo, dst, symlinks=True,
+                        ignore=shutil.ignore_patterns(".thor_libs", ".thor_venv"))
+        shutil.rmtree(os.path.join(dst, ".git", "hooks"), ignore_errors=True)
+        os.chmod(dst, 0o777)
+        if _prep_build(dst):
+            return dst
+    except Exception:  # noqa: BLE001 — best-effort: any prep failure falls back to the un-prepared run
+        pass
+    shutil.rmtree(work, ignore_errors=True)
+    return repo
+
+
+def _prep_build(dst: str) -> bool:
+    """Build the project IN PLACE (generate artifacts like `_version.py` into src) + install its declared deps
+    into `<dst>/.thor_libs`, in ONE network-enabled, capability-dropped, ephemeral container. Best-effort."""
+    import docker as _docker
+
+    from wall import config
+    # editable build -> writes generated version files into src; then deps into a portable target dir that the
+    # sealed run adds to PYTHONPATH. `|| true` so a partial prep (e.g. artifacts only) still helps.
+    script = ("pip install -e . --no-deps -q 2>&1 | tail -2 || true; "
+              "pip install . --target=/work/.thor_libs -q 2>&1 | tail -2 || true")
+    container = None
+    try:
+        client = _docker.from_env()
+        container = client.containers.run(
+            config.ROOM_IMAGE, entrypoint="", command=["sh", "-c", script], working_dir="/work",
+            mounts=[_docker.types.Mount("/work", dst, type="bind")],
+            network_disabled=False,            # TRUSTED PREP needs the network to build + fetch declared deps
+            cap_drop=["ALL"], security_opt=["no-new-privileges"], mem_limit="1536m", pids_limit=512,
+            detach=True)
+        container.wait(timeout=int(os.environ.get("THOR_PREP_TIMEOUT", "240")))
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+    finally:
+        if container is not None:
+            try:
+                container.remove(force=True)
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def cleanup_prepared(test_repo: str | None, repo: str) -> None:
+    """Remove the temp prep copy if one was made (test_repo lives under a `thor-prep-*` temp dir)."""
+    if test_repo and test_repo != repo and os.path.basename(test_repo) == "r":
+        shutil.rmtree(os.path.dirname(test_repo), ignore_errors=True)
 
 
 # ---- 6.2 Git Ground-Truth Reader ----
@@ -146,7 +232,7 @@ def run_test(repo: str, test_relpath: str | None, argv: list[str] | None = None)
         rc, out, _ = sandboxed_run(repo, argv)
         return rc, out
     try:                                                   # docker-free gated suite (trusted fixtures)
-        ppath = repo + os.pathsep + os.path.join(repo, "src")   # flat-layout AND src-layout importable
+        ppath = os.pathsep.join([os.path.join(repo, "src"), repo, os.path.join(repo, ".thor_libs")])
         p = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=repo,
                            env={**_minimal_env(), "PYTHONPATH": ppath})
         return p.returncode, (p.stdout + p.stderr)

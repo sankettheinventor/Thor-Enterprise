@@ -34,6 +34,7 @@ class VerdictContext:
     base_branch: str = "main"
     commit_window: tuple | None = None
     skill_results_ok: bool = True                    # R1 (CTO skills) — stubbed input until CTO module
+    test_repo: str | None = None                     # prepared (built + deps) copy for test runs; None → repo
 
 
 def _is_test_file(contract: dict, path: str) -> bool:
@@ -75,15 +76,21 @@ class GovernanceEngine:
     def run_verdict(self, ctx: VerdictContext) -> dict:
         ctx.manager = ctx.manager or self.manager
         try:                                          # fail-closed wrapper (FR-15 / AC-8)
-            probe_results = probes_mod.run_all(ctx)
-            changed = reality.changed_files(ctx.repo, ctx.branch, ctx.base_branch)
-            m1_pass = next(x for x in probe_results if x.name == "M1").passed
-            gate_hits = len(reality.gate_hits(ctx.manager, ctx.commit_window))
-            d = div_mod.detect(ctx.claim, changed, m1_pass, gate_hits)
-            nonpy_status, _nonpy_why = fake_test_mod.verify_nonpython(ctx.repo, ctx.contract)
-            stakes = _stakes(ctx.contract, changed, nonpy_status)
-            verdict = panel.adjudicate(probe_results, d, stakes)
-            snapshot = reality.head_sha(ctx.repo, ctx.branch)
+            changed = reality.changed_files(ctx.repo, ctx.branch, ctx.base_branch)   # git read (original)
+            # TRUSTED PREP (real installable repos): build + install declared deps into a copy for the test
+            # runs — SKIPPED if the cook touched a build file (those escalate). Git reads stay on ctx.repo.
+            ctx.test_repo = reality.prepare_project(ctx.repo, changed)
+            try:
+                probe_results = probes_mod.run_all(ctx)
+                m1_pass = next(x for x in probe_results if x.name == "M1").passed
+                gate_hits = len(reality.gate_hits(ctx.manager, ctx.commit_window))
+                d = div_mod.detect(ctx.claim, changed, m1_pass, gate_hits)
+                nonpy_status, _nonpy_why = fake_test_mod.verify_nonpython(ctx.test_repo or ctx.repo, ctx.contract)
+                stakes = _stakes(ctx.contract, changed, nonpy_status)
+                verdict = panel.adjudicate(probe_results, d, stakes)
+                snapshot = reality.head_sha(ctx.repo, ctx.branch)
+            finally:
+                reality.cleanup_prepared(ctx.test_repo, ctx.repo)
         except reality.RealityError as e:
             verdict = panel.adjudicate([], None, "normal", errors=[f"reality unreadable: {e}"])
             probe_results, d, snapshot = [], None, None

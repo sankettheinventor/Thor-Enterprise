@@ -28,12 +28,15 @@ def run_all(ctx) -> list[ProbeResult]:
     """Run the 8 probes against reality. Raises reality.RealityError if reality can't be read (FR-15)."""
     c = ctx.contract
     repo, branch = ctx.repo, ctx.branch
+    # TEST RUNS use the PREPARED repo (build artifacts generated + declared deps installed by the trusted
+    # prep phase) when one was made; GIT reads (M2/M3) always use the original. Falls back to `repo`.
+    tr = getattr(ctx, "test_repo", None) or repo
 
     # ---- M1: verifier exit 0, but a hollow test is overridden to fail (fake-test-checker, FR-13) ----
     # The runner is LANGUAGE-AGNOSTIC: inferred from the test extension or the contract's `test_command`, so
     # a Go/JS/Ruby/shell test runs the same way a Python one does (its runtime must be in the room image).
-    rc, out = reality.run_test(repo, c.get("test_file"), argv=fake_test.test_argv(c.get("test_file"), c))
-    hollow, why = fake_test.is_hollow(repo, c.get("test_file"), c)
+    rc, out = reality.run_test(tr, c.get("test_file"), argv=fake_test.test_argv(c.get("test_file"), c))
+    hollow, why = fake_test.is_hollow(tr, c.get("test_file"), c)
     if rc == 0 and hollow:
         m1 = ProbeResult("M1", False, f"verifier exited 0 but test is hollow: {why}")
     else:
@@ -51,7 +54,7 @@ def run_all(ctx) -> list[ProbeResult]:
                      + (f" MISSING={sorted(missing)}" if missing else ""))
 
     # ---- M4: regression/preventive test exit 0 ----
-    rrc, rout = reality.run_test(repo, c.get("regression_file"))
+    rrc, rout = reality.run_test(tr, c.get("regression_file"))
     m4 = ProbeResult("M4", rrc == 0, f"regression exit={rrc}" + ("" if rrc == 0 else f"; {rout[:80]}"))
 
     # ---- M5: every contract for the feature is status:done ----
