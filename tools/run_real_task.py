@@ -44,13 +44,14 @@ TESTF = os.environ.get("THOR_TASK_TEST", "src/test_util.py")
 DESC = os.environ.get("THOR_TASK_DESC",
                       "Add a function slugify(text) that returns a URL-safe slug: lowercase, spaces and "
                       "underscores become single hyphens, drop every other non-alphanumeric, collapse "
-                      "repeated hyphens, and strip leading/trailing hyphens.")
-# The cook must write the IMPLEMENTATION in SCOPE and the TEST in TESTF (the verdict RUNS exactly that
-# test file), and the test must actually exercise the new code so it can go red — spell it out for the agent.
-DESC += (f" Put the implementation in {SCOPE} and a real test in {TESTF} that imports from {SCOPE} and "
-         f"asserts slugify('Hello,  World!') == 'hello-world'. IMPORTANT: the test is executed directly as "
-         f"`python3 {TESTF}` (NOT pytest), so its assertions must RUN when the file is executed — put them "
-         f"at module level (or call your test functions at the bottom), and print 'ok' at the end.")
+                      "repeated hyphens, and strip leading/trailing hyphens, then asserts "
+                      "slugify('Hello,  World!') == 'hello-world'.")
+# GENERIC execution contract appended to ANY task (the verdict RUNS exactly TESTF, directly, and requires
+# the test to actually exercise the new code so it can go red): spell out HOW the test is run for the agent.
+DESC += (f" Put the implementation in {SCOPE} and a real test in {TESTF}. IMPORTANT: the test is executed "
+         f"directly as `python3 {TESTF}` (NOT pytest), so its assertions must RUN when the file is executed "
+         f"— put them at module level (or call your test functions at the bottom), import the code under "
+         f"test the normal package way, and print 'ok' at the end.")
 
 from contract.seam import Seam  # noqa: E402
 from contract.slice_builder import build_slice  # noqa: E402

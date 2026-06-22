@@ -79,9 +79,10 @@ def sandboxed_run(repo: str, argv: list[str], *, timeout: int = 30, prepare=None
             tmpfs={"/tmp": "", "/home/cook": "uid=1000,gid=1000"},
             environment={"PYTHONDONTWRITEBYTECODE": "1", "HOME": "/home/cook",
                          "PATH": "/usr/local/bin:/usr/bin:/bin",
-                         # the repo ROOT is importable, so a normal package import in the cook's test
-                         # (`from src.util import ...`) works — matching how real test suites are run.
-                         "PYTHONPATH": "/work"},
+                         # the project is importable like a real test suite: both the repo ROOT (flat layout,
+                         # `from src.util import ...`) AND `src/` (src-layout, `from humanize import ...` for a
+                         # package under src/) are on the path — the two dominant real-world conventions.
+                         "PYTHONPATH": "/work:/work/src"},
             detach=True)
         try:
             rc = container.wait(timeout=timeout).get("StatusCode", 1)
@@ -145,8 +146,9 @@ def run_test(repo: str, test_relpath: str | None, argv: list[str] | None = None)
         rc, out, _ = sandboxed_run(repo, argv)
         return rc, out
     try:                                                   # docker-free gated suite (trusted fixtures)
+        ppath = repo + os.pathsep + os.path.join(repo, "src")   # flat-layout AND src-layout importable
         p = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=repo,
-                           env={**_minimal_env(), "PYTHONPATH": repo})   # repo root importable (package imports)
+                           env={**_minimal_env(), "PYTHONPATH": ppath})
         return p.returncode, (p.stdout + p.stderr)
     except FileNotFoundError as e:                         # the language runtime is absent from the image
         return 127, f"test runner not available ({e}) — the room image lacks this language's runtime"
