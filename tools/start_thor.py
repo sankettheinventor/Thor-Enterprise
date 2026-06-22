@@ -137,8 +137,22 @@ def boot() -> list[tuple[object, int]]:
     # ---- 1) DB — the single ledger backend ----
     if _pg_reachable():
         print(f"[thor] DB        Postgres reachable at {pg.DSN}")
+    elif os.environ.get("THOR_PG_DSN"):
+        # PRODUCTION/compose: an EXTERNAL Postgres is configured. WAIT for it to come up (it may still be
+        # starting) — never bootstrap a local container (that is a dev-only convenience and needs the Docker
+        # socket, which a prod controlplane should not depend on to reach its own database). Fail clearly if
+        # it never arrives so the cause is the DB/credentials, not a confusing docker-socket error.
+        print("[thor] DB        waiting for external Postgres (THOR_PG_DSN) ...")
+        for _ in range(60):
+            time.sleep(2)
+            if _pg_reachable():
+                break
+        else:
+            sys.exit("[thor] FATAL: Postgres at THOR_PG_DSN never became reachable — check the DB service "
+                     "is healthy and THOR_PG_* credentials match the database.")
+        print(f"[thor] DB        external Postgres reachable at {pg.DSN}")
     else:
-        print("[thor] DB        Postgres not reachable — bootstrapping thor-postgres ...")
+        print("[thor] DB        Postgres not reachable — bootstrapping a local thor-postgres (dev) ...")
         pg.start()
         print(f"[thor] DB        up at {pg.DSN}")
     conn = _LockedConn(db.connect())       # thread-safe: the control plane serves HTTP off one conn
