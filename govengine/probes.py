@@ -53,8 +53,9 @@ def run_all(ctx) -> list[ProbeResult]:
     m3 = ProbeResult("M3", not missing, f"cited={sorted(cited)} changed={sorted(changed)}"
                      + (f" MISSING={sorted(missing)}" if missing else ""))
 
-    # ---- M4: regression/preventive test exit 0 ----
-    rrc, rout = reality.run_test(tr, c.get("regression_file"))
+    # ---- M4: regression/preventive test exit 0 (language-aware runner, same as M1) ----
+    rrc, rout = reality.run_test(tr, c.get("regression_file"),
+                                 argv=fake_test.test_argv(c.get("regression_file"), c))
     m4 = ProbeResult("M4", rrc == 0, f"regression exit={rrc}" + ("" if rrc == 0 else f"; {rout[:80]}"))
 
     # ---- M5: every contract for the feature is status:done ----
