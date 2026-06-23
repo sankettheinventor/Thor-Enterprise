@@ -329,10 +329,21 @@ class ThorManager:
 
     def list_features(self) -> list[dict]:
         with self.conn.cursor() as cur:
-            cur.execute("SELECT feature_id,title,priority,status,est_tokens FROM features "
+            cur.execute("SELECT feature_id,title,priority,status,est_tokens,context FROM features "
                         "ORDER BY priority NULLS LAST, feature_id")
-            return [{"feature_id": r[0], "title": r[1], "priority": r[2], "status": r[3],
-                     "est_tokens": r[4]} for r in cur.fetchall()]
+            out = []
+            for r in cur.fetchall():
+                feat = {"feature_id": r[0], "title": r[1], "priority": r[2], "status": r[3], "est_tokens": r[4]}
+                if r[5]:                                  # Genesis stores the rich plan (tasks/QA/etc.) in context
+                    try:
+                        c = json.loads(r[5])
+                        for k in ("summary", "acceptance_criteria", "tasks", "qa_cases", "depends_on"):
+                            if c.get(k):
+                                feat[k] = c[k]
+                    except (ValueError, TypeError):
+                        pass
+                out.append(feat)
+            return out
 
     def list_checker_findings(self) -> list[dict]:
         with self.conn.cursor() as cur:

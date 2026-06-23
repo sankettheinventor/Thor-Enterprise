@@ -84,6 +84,10 @@ class FeatureIn(BaseModel):
     priority: int = Field(default=3, ge=0, le=3)
 
 
+class GenesisIn(BaseModel):
+    idea: str = Field(min_length=8, max_length=4000)
+
+
 class Sig(BaseModel):
     card_id: str
     signature: str
@@ -228,6 +232,15 @@ async def stream():
 @app.post("/features")
 def add_feature(f: FeatureIn, _user=Depends(_operator)):
     return {"feature_id": _service.add_feature(f.title, f.context, f.priority)}
+
+
+@app.post("/genesis")
+def genesis(g: GenesisIn, _user=Depends(_operator)):
+    """Genesis — plan a WHOLE project from an idea (core capability, any project). Runs the real planner in
+    the background (it's a sealed-room agent); the features land on the board through the one Manager."""
+    import threading
+    threading.Thread(target=lambda: _service.genesis(g.idea), daemon=True).start()
+    return {"status": "planning", "idea": g.idea[:80]}
 
 
 @app.delete("/features/{feature_id}")

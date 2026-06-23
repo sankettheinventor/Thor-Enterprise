@@ -56,6 +56,7 @@ export default function App() {
     stop: async (fid) => { await post(`/features/${fid}/stop`); toast(`Stopped ${fid}`); refresh() },
     prioritize: async (fid, p) => { await post('/commands/prioritize', { feature_id: fid, priority: p }); toast(`Priority → P${p}`); refresh() },
     markReady: async (fid) => { await post('/commands/mark_ready', { feature_id: fid }); toast('Marked ready — Scheduler will pick it up'); refresh() },
+    genesis: async () => { const idea = window.prompt('Describe your project in a sentence or two — Genesis will plan the whole feature list:'); if (idea && idea.trim().length >= 8) { await post('/genesis', { idea: idea.trim() }); toast('Genesis is planning your project — features will appear on the board in ~1–2 min') } },
   }
 
   // ---- derived metrics (all from real endpoints) ----
@@ -232,14 +233,22 @@ const COL_OF = { backlog: 'backlog', ready: 'ready', building: 'building', worki
 const colOf = (s) => COL_OF[s || 'backlog'] || 'backlog'
 const prioLabel = (p) => (p == null ? 'P2' : p <= 1 ? 'P0' : p === 2 ? 'P1' : 'P2')
 const prioCls = (p) => (p == null ? 'p2' : p <= 1 ? 'p0' : p === 2 ? 'p1' : 'p2')
-// sample task breakdown + QA cases until Genesis fills the real ones (the structure the planner will populate)
-const tasksFor = (f) => f.tasks || [
-  { id: 't1', title: 'Design + acceptance criteria', status: (f.stage ?? 0) >= 1 ? 'done' : 'todo' },
-  { id: 't2', title: `Implement ${f.title || f.feature_id}`, status: (f.stage ?? 0) >= 2 ? 'done' : (f.stage === 1 ? 'doing' : 'todo') },
-  { id: 't3', title: 'Write tests', status: (f.stage ?? 0) >= 3 ? 'done' : 'todo' },
-  { id: 't4', title: 'QA + verdict', status: (f.stage ?? 0) >= 4 ? 'done' : 'todo' },
-  { id: 't5', title: 'Sign + merge', status: f.status === 'done' ? 'done' : 'todo' },
-]
+// REAL tasks come from Genesis (strings); normalize to {id,title,status}. Sample fallback before Genesis.
+const tasksFor = (f) => {
+  if (Array.isArray(f.tasks) && f.tasks.length) {
+    const st = f.stage ?? 0, n = f.tasks.length
+    return f.tasks.map((t, i) => typeof t === 'string'
+      ? { id: `t${i}`, title: t, status: f.status === 'done' ? 'done' : (i < Math.round(st / 5 * n) ? 'done' : i === Math.round(st / 5 * n) && st > 0 ? 'doing' : 'todo') }
+      : t)
+  }
+  return [
+    { id: 't1', title: 'Design + acceptance criteria', status: (f.stage ?? 0) >= 1 ? 'done' : 'todo' },
+    { id: 't2', title: `Implement ${f.title || f.feature_id}`, status: (f.stage ?? 0) >= 2 ? 'done' : (f.stage === 1 ? 'doing' : 'todo') },
+    { id: 't3', title: 'Write tests', status: (f.stage ?? 0) >= 3 ? 'done' : 'todo' },
+    { id: 't4', title: 'QA + verdict', status: (f.stage ?? 0) >= 4 ? 'done' : 'todo' },
+    { id: 't5', title: 'Sign + merge', status: f.status === 'done' ? 'done' : 'todo' },
+  ]
+}
 const qaFor = (f) => f.qa_cases || ['Happy path returns the expected output', 'Invalid input is rejected', 'Edge cases handled', 'No regression in existing behaviour']
 
 function Board({ features, owner, sel, setSel, act }) {
@@ -249,8 +258,9 @@ function Board({ features, owner, sel, setSel, act }) {
   return (
     <main className="board-view">
       <div className="board-head2">
-        <div className="board-title2">Project Board <span className="muted">· {features.length} features · sample tasks until Genesis</span></div>
-        <button className="ghost-btn" onClick={act.newTask}>+ Feature</button>
+        <div className="board-title2">Project Board <span className="muted">· {features.length} features</span></div>
+        <button className="ghost-btn" onClick={act.genesis}>✨ Plan Project</button>
+        <button className="ghost-btn" onClick={act.newTask} style={{ marginLeft: 8 }}>+ Feature</button>
       </div>
       <div className="board-grid">
         {BOARD_COLS.map((col) => (

@@ -35,6 +35,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
+# Persist the DEV control-plane DB across restarts (a NAMED volume) — set BEFORE manager.pg is imported so
+# pg.start uses it. Process-local to start_thor, so it never collides with the QA lane's isolated volume.
+os.environ.setdefault("THOR_PG_VOLUME", "thor-pgdata-dev")
+
 import psycopg
 import uvicorn
 from fastapi.responses import FileResponse

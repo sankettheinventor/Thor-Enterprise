@@ -110,10 +110,14 @@ class DashboardService:
             status = f.get("status") or "backlog"
             idx = self._LADDER.index(status) if status in self._LADDER else 0
             open_bugs = sum(1 for b in self.manager.list_bugs(f["feature_id"]) if b.get("status") == "open")
-            out.append({"feature_id": f["feature_id"], "title": f.get("title") or f["feature_id"],
-                        "status": status, "stage": idx, "stages": list(self._LADDER),
-                        "priority": f.get("priority") if f.get("priority") is not None else 3,
-                        "progress": round(100 * idx / (len(self._LADDER) - 1)), "open_bugs": open_bugs})
+            row = {"feature_id": f["feature_id"], "title": f.get("title") or f["feature_id"],
+                   "status": status, "stage": idx, "stages": list(self._LADDER),
+                   "priority": f.get("priority") if f.get("priority") is not None else 3,
+                   "progress": round(100 * idx / (len(self._LADDER) - 1)), "open_bugs": open_bugs}
+            for k in ("summary", "acceptance_criteria", "tasks", "qa_cases", "depends_on"):  # Genesis plan data
+                if f.get(k):
+                    row[k] = f[k]
+            out.append(row)
         return sorted(out, key=lambda x: (-x["progress"], x["feature_id"]))
 
     def bugs(self) -> list[dict]:
@@ -170,6 +174,21 @@ class DashboardService:
         self.manager.add_feature(fid, title, context, priority, est_tokens)
         self._action("add_feature", {"feature_id": fid})
         return fid
+
+    def genesis(self, idea: str) -> dict:
+        """Genesis (Bible §10) — a CORE capability for ANY project: the real planner turns an idea into the
+        feature catalog (features → tasks → QA → P0/P1/P2 → dependencies), written through THIS Manager (the
+        sole ledger writer). Long-running (a real planning agent in a sealed room) — call in a background
+        thread; the features appear on the board as they land."""
+        from tools.genesis import _PR, _ctx_for, plan_project
+        plan, _repo = plan_project(idea)
+        feats = []
+        for f in plan.get("features", []):
+            fid = self.add_feature(f.get("title", "feature"), _ctx_for(f, plan.get("vision", "")),
+                                   _PR.get(f.get("priority"), 3))
+            feats.append({"feature_id": fid, "title": f.get("title"), "priority": f.get("priority")})
+        self.manager._record("genesis.planned", {"vision": plan.get("vision", "")[:500], "feature_count": len(feats)})
+        return {"vision": plan.get("vision", ""), "features": feats}
 
     def mark_ready(self, feature_id: str) -> None:
         self.manager.set_feature_status(feature_id, "ready")
