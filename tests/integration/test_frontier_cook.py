@@ -23,15 +23,17 @@ def test_wiring_resolves_command_egress_env():
 
 
 def test_preflight_demands_the_oauth_token(monkeypatch):
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    # preflight now accepts ANY discoverable Claude login (env token OR the user's credentials file). Patch
+    # the discovery seam so the test is hermetic — else it finds the host's real login and never "demands".
+    monkeypatch.setattr("cook.runtime.discover_claude_oauth", lambda: None)
     problems = ClaudeCodeRuntime().preflight()
     assert problems and "CLAUDE_CODE_OAUTH_TOKEN" in problems[0]
-    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "test-token")
-    assert ClaudeCodeRuntime().preflight() == []                  # configured → ready
+    monkeypatch.setattr("cook.runtime.discover_claude_oauth", lambda: "test-token")
+    assert ClaudeCodeRuntime().preflight() == []                  # a login is discoverable → ready
 
 
 def test_runner_refuses_to_launch_without_the_token(monkeypatch):
-    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr("cook.runtime.discover_claude_oauth", lambda: None)   # no login anywhere
     with pytest.raises(ValueError, match="CLAUDE_CODE_OAUTH_TOKEN"):
         CookRunner(runtime=ClaudeCodeRuntime()).run(SLICE, worktree_host_path="/tmp/nope")
 

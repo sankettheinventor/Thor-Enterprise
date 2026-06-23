@@ -269,6 +269,23 @@ def boot() -> list[tuple[object, int]]:
     else:
         print("[thor] HTTP      surfaces bound; cockpit at :7080/  (build ui/ for the React PWA at /app/)")
 
+    # ---- 10) FLOW A — the LIVE build loop (Integration PRD): the control plane drives builds itself ----
+    # When a project worktree is configured, a background loop on THIS Manager (single-writer) picks every
+    # `ready` feature and runs it through FLOW A: building -> sealed cook -> verdict -> merge card +
+    # awaiting_signature. The human signs in the cockpit; service.approve does the real freshness-checked
+    # merge. Decoupled from the cook choice: THOR_COOK (default claude-code) + THOR_VERIFY_IMAGE pick the
+    # frontier model + the polyglot verdict sandbox.
+    project_repo = os.environ.get("THOR_PROJECT_REPO", "").strip()
+    if project_repo and Path(project_repo).is_dir():
+        os.environ.setdefault("THOR_COOK", "claude-code")   # the loop runs real cooks; verdict sandboxes too
+        from sdlc.build_driver import start_build_loop
+        cap = int(os.environ.get("THOR_BUILD_CAPACITY", "1") or "1")
+        start_build_loop(manager, project_repo, capacity=cap)
+        print(f"[thor] FLOW A    live build loop UP — drives `ready` features through {project_repo} "
+              f"(cook={os.environ.get('THOR_COOK')}, capacity={cap})")
+    else:
+        print("[thor] FLOW A    build loop idle (set THOR_PROJECT_REPO=<git worktree> to drive builds live)")
+
     return [
         (manager_api.app, PORTS["manager"]),
         (dashboard_api.app, PORTS["dashboard"]),
