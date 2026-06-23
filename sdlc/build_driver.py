@@ -16,6 +16,7 @@ ledger directly — every state change goes through the Manager (so the chain st
 from __future__ import annotations
 
 import re
+import subprocess
 import threading
 
 
@@ -39,9 +40,24 @@ def _slice_for(feature: dict) -> dict:
             "scope_files": [code, test], "planned_test": test, "regression_file": test, "code_file": code}
 
 
+def _clean_main(repo: str) -> None:
+    """Reset the shared worktree to a pristine `main` before a build. The control plane drives features
+    one at a time on one worktree; without this, feature N's branch is cut from feature N-1's HEAD, so its
+    files land in N's diff as UNDECLARED changes -> divergence -> escalate. Each FLOW-A feature is cut from
+    main. No-op if there's no `main` (e.g. a bare fixture repo on another default branch)."""
+    def git(*a):
+        return subprocess.run(["git", "-C", repo, *a], capture_output=True, text=True)
+    if git("rev-parse", "--verify", "main").returncode != 0:
+        return
+    git("checkout", "-q", "-f", "main")
+    git("reset", "--hard", "-q", "main")
+    git("clean", "-fdq")
+
+
 def run_feature(manager, feature: dict, repo: str) -> str:
     """Drive ONE feature through FLOW A via the Manager. Returns the verdict ('done'|'not_done'|'error')."""
     fid = feature["feature_id"]
+    _clean_main(repo)
     from contract.seam import Seam
     from contract.slice_builder import build_slice
     from contract.transport import InProcessTransport
@@ -84,10 +100,13 @@ class BuildLoop:
     """The deterministic dispatch loop (Scheduler doctrine: zero-LLM sequencing). Picks `ready` features and
     drives each through FLOW A, one capacity-slot at a time, on the control plane's single Manager."""
 
-    def __init__(self, manager, repo: str, capacity: int = 1, interval: float = 5.0) -> None:
+    def __init__(self, manager, repo: str, capacity: int = 1, interval: float = 5.0,
+                 max_attempts: int = 2) -> None:
         self.manager, self.repo, self.capacity, self.interval = manager, repo, capacity, interval
+        self.max_attempts = max_attempts        # a feature that won't pass is BLOCKED, never retried forever
         self._stop = threading.Event()
         self._running: set[str] = set()
+        self._attempts: dict[str, int] = {}
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -101,7 +120,8 @@ class BuildLoop:
         while not self._stop.is_set():
             try:
                 if len(self._running) < self.capacity:
-                    ready = [f for f in self.manager.list_features() if f.get("status") == "ready"]
+                    ready = [f for f in self.manager.list_features()
+                             if f.get("status") == "ready" and f["feature_id"] not in self._running]
                     for f in ready[: self.capacity - len(self._running)]:
                         self._dispatch(f)
             except Exception:  # noqa: BLE001 — never let a transient error kill the loop
@@ -114,7 +134,20 @@ class BuildLoop:
 
         def _work():
             try:
-                run_feature(self.manager, feature, self.repo)
+                verdict = run_feature(self.manager, feature, self.repo)
+                if verdict == "done":
+                    self._attempts.pop(fid, None)
+                    return
+                # not_done / error / escalate — count the attempt and stop retrying once capped, so a feature
+                # that can't pass is BLOCKED for a human (never an infinite cook-spend loop). run_feature has
+                # already returned it to `ready`; override to `blocked` when the cap is reached.
+                n = self._attempts.get(fid, 0) + 1
+                self._attempts[fid] = n
+                if n >= self.max_attempts:
+                    self.manager.set_feature_status(fid, "blocked")
+                    self.manager._record("build.blocked",
+                                         {"feature_id": fid, "attempts": n, "last_verdict": verdict},
+                                         feature_id=fid)
             finally:
                 self._running.discard(fid)
 

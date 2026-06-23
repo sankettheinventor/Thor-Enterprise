@@ -74,16 +74,24 @@ class _LockedConn:
     `conn.cursor()` / `conn.commit()`. (Relates to register M4; the proper fix is a pool, later.)
     """
 
-    def __init__(self, conn) -> None:
+    def __init__(self, conn, reconnect=None) -> None:
         self._conn = conn
+        self._reconnect = reconnect        # () -> fresh connection, for self-healing a dropped link
         self._lock = threading.RLock()
 
+    def _ensure(self):
+        """Caller MUST hold the lock. If the link dropped (long build, idle timeout, server reset),
+        reconnect so a transient close can't wedge every HTTP read for the rest of the process."""
+        if getattr(self._conn, "closed", False) and self._reconnect is not None:
+            self._conn = self._reconnect()
+        return self._conn
+
     def cursor(self, *a, **k):
-        return _LockedCursor(self._conn, self._lock, a, k)
+        return _LockedCursor(self, a, k)
 
     def commit(self):
         with self._lock:
-            return self._conn.commit()
+            return self._ensure().commit()
 
     def __getattr__(self, name):           # pass through everything else (execute, close, info, ...)
         return getattr(self._conn, name)
@@ -92,23 +100,24 @@ class _LockedConn:
 class _LockedCursor:
     """A cursor context manager that holds the connection lock for the whole `with` block."""
 
-    def __init__(self, conn, lock, a, k) -> None:
-        self._conn, self._lock, self._a, self._k, self._cur = conn, lock, a, k, None
+    def __init__(self, owner, a, k) -> None:
+        self._owner, self._a, self._k, self._cur = owner, a, k, None
 
     def __enter__(self):
-        self._lock.acquire()
+        self._owner._lock.acquire()
         try:
-            self._cur = self._conn.cursor(*self._a, **self._k)
+            conn = self._owner._ensure()          # reconnect first if the link dropped
+            self._cur = conn.cursor(*self._a, **self._k)
             return self._cur.__enter__()
         except Exception:
-            self._lock.release()
+            self._owner._lock.release()
             raise
 
     def __exit__(self, *exc):
         try:
             return self._cur.__exit__(*exc)
         finally:
-            self._lock.release()
+            self._owner._lock.release()
 
 
 def _pg_reachable() -> bool:
@@ -159,7 +168,7 @@ def boot() -> list[tuple[object, int]]:
         print("[thor] DB        Postgres not reachable — bootstrapping a local thor-postgres (dev) ...")
         pg.start()
         print(f"[thor] DB        up at {pg.DSN}")
-    conn = _LockedConn(db.connect())       # thread-safe: the control plane serves HTTP off one conn
+    conn = _LockedConn(db.connect(), reconnect=db.connect)   # thread-safe + self-healing on a dropped link
     db.init_schema(conn)
 
     # ---- 2) CTO — the brain (shared planner/escalation head) ----
@@ -239,7 +248,8 @@ def boot() -> list[tuple[object, int]]:
     sa_db.setup(conn)                      # create the read-only selfaudit role + tables (idempotent)
     from selfaudit import model_host as sa_model
     sa_inspector = sa_model.select_model()   # T9: a real local Ollama/Qwen if present, else deterministic v1
-    selfaudit = SelfAudit(_LockedConn(sa_db.connect_readonly()), sentinel=sentinel, model=sa_inspector)
+    selfaudit = SelfAudit(_LockedConn(sa_db.connect_readonly(), reconnect=sa_db.connect_readonly),
+                          sentinel=sentinel, model=sa_inspector)
     print(f"[thor] SelfAudit correctness eyes up — read-only DB role; model={sa_inspector.name} "
           f"(zero frontier calls)")
 

@@ -26,18 +26,19 @@ _CONTACT = os.environ.get("THOR_VAPID_CONTACT", "mailto:ops@thor.local")
 
 
 def _vapid() -> Vapid01:
-    v = Vapid01()
     if _KEY.exists():
-        v.from_file(str(_KEY))
-    else:
-        v.generate_keys()
-        _KEY.parent.mkdir(parents=True, exist_ok=True)
-        v.save_key(str(_KEY))
-        try:                                  # the VAPID private key is a secret — owner-only (0600/0700)
-            os.chmod(_KEY.parent, 0o700)
-            os.chmod(_KEY, 0o600)
-        except OSError:
-            pass
+        # NB: Vapid01.from_file is a CLASSMETHOD that RETURNS a loaded instance — it does not mutate in
+        # place. Using its return value is essential; ignoring it leaves an empty key (public_key is None).
+        return Vapid01.from_file(str(_KEY))
+    v = Vapid01()
+    v.generate_keys()
+    _KEY.parent.mkdir(parents=True, exist_ok=True)
+    v.save_key(str(_KEY))
+    try:                                  # the VAPID private key is a secret — owner-only (0600/0700)
+        os.chmod(_KEY.parent, 0o700)
+        os.chmod(_KEY, 0o600)
+    except OSError:
+        pass
     return v
 
 

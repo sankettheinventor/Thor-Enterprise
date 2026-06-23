@@ -57,3 +57,18 @@ def test_push_encrypts_and_delivers_to_device():
         assert received.get("auth", "").lower().startswith("vapid"), "must carry a VAPID Authorization"
     finally:
         srv.shutdown()
+
+
+def test_vapid_key_survives_reload_from_file():
+    """Regression: public_key() must also work when the key file ALREADY exists (the from_file reload path,
+    i.e. every boot after the first). Vapid01.from_file is a CLASSMETHOD returning a NEW instance — ignoring
+    its return value left public_key None and 500'd /push/vapid on every restart."""
+    from dashboard import push
+
+    d = tempfile.mkdtemp(prefix="push-reload-")
+    push._KEY = Path(d) / "vapid.pem"
+    first = push.public_key()                       # no file yet -> generate + save
+    assert (Path(d) / "vapid.pem").exists(), "the key must be persisted for reuse"
+    second = push.public_key()                      # file EXISTS now -> the from_file reload path
+    assert second == first, "the application server key must be stable across reloads (subscriptions depend on it)"
+    assert len(second) > 80
