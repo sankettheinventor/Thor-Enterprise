@@ -70,10 +70,13 @@ class DashboardService:
             return out
 
     def audit_feed(self, feature_id: str | None = None) -> list[dict]:
-        return audit.feed(self.manager.eventlog.all_events(), feature_id)
+        # GDPR Art.17: redact erased subjects from anything served (the raw chained rows are untouched).
+        from compliance import erasure
+        return audit.feed(erasure.redact_events(self.manager.eventlog.all_events()), feature_id)
 
     def audit_export(self, fmt: str = "json") -> str:
-        return audit.export(self.manager.eventlog.all_events(), fmt)
+        from compliance import erasure
+        return audit.export(erasure.redact_events(self.manager.eventlog.all_events()), fmt)
 
     def cost(self) -> dict:
         features = self.manager.list_features()
