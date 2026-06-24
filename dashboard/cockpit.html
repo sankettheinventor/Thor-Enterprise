@@ -472,8 +472,15 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
 (() => {
   'use strict';
   const POLL_MS = 2500;
+  // Resolve the control-plane origin. Normally same-origin (served at :7080), but if this file is ever
+  // opened directly (file://) or from a non-http origin, fall back to the local plane so the cockpit still
+  // reaches the API instead of failing every fetch and showing a permanent DISCONNECTED.
+  const BASE = (typeof location !== 'undefined' && /^https?:/.test(location.origin || '')) ? location.origin : 'http://localhost:7080';
   const $ = id => document.getElementById(id);
   let failCount = 0;
+  // Render resilience: a single panel that throws must NOT blank the whole cockpit (refreshAll's catch
+  // would otherwise count it as a connection failure and disconnect everything). Isolate each panel.
+  const safe = (fn) => { try { fn(); } catch (e) { console.error('[cockpit] panel render error:', e); } };
 
   // ── UI MECHANICS (verbatim idiom from the original) ──
   function esc(s) { return s == null ? '' : String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -486,9 +493,9 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
     if (sec < 86400) return Math.floor(sec/3600) + 'h ago';
     return Math.floor(sec/86400) + 'd ago';
   }
-  async function get(p) { const r = await fetch(location.origin + p, { cache:'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }
+  async function get(p) { const r = await fetch(BASE + p, { cache:'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }
   async function post(p, body) {
-    const r = await fetch(location.origin + p, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body||{}) });
+    const r = await fetch(BASE + p, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body||{}) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     return r.json();
   }
@@ -896,18 +903,18 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
       // use /health/system as the authoritative health (summary.health mirrors it)
       const h = health || summary.health || {};
 
-      renderTrust({ health: h });
-      renderEnterprise(h, liesData, costData);
-      renderSummary(cards, feed, findings, h);
-      renderLiveStatus(activeRooms, h, feed);
-      renderProjectPulse(feed);
-      renderFeatureGrid(cols);
-      renderCtoDecisions(feed);
-      renderQueue(cards, 'decide-queue');
-      renderQueue(cards.slice(0, 2), 'home-queue');
-      renderActivity(feed);
-      renderWork(cols, feed);
-      renderSecurity(h, feed);
+      safe(() => renderTrust({ health: h }));
+      safe(() => renderEnterprise(h, liesData, costData));
+      safe(() => renderSummary(cards, feed, findings, h));
+      safe(() => renderLiveStatus(activeRooms, h, feed));
+      safe(() => renderProjectPulse(feed));
+      safe(() => renderFeatureGrid(cols));
+      safe(() => renderCtoDecisions(feed));
+      safe(() => renderQueue(cards, 'decide-queue'));
+      safe(() => renderQueue(cards.slice(0, 2), 'home-queue'));
+      safe(() => renderActivity(feed));
+      safe(() => renderWork(cols, feed));
+      safe(() => renderSecurity(h, feed));
 
       $('live-text').textContent = 'live · ' + cards.length + ' pending';
     } catch (e) {
@@ -943,17 +950,17 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
   async function registered() {
     const priv = operatorKey();
     const pub = b64url(ed.getPublicKey(priv));
-    await fetch(location.origin + '/operator/register', {
+    await fetch(BASE + '/operator/register', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ signer_pub: pub }) });
     return { priv, pub };
   }
   window.thorSign = async function (cardId) {
     try {
       const { priv, pub } = await registered();
-      const ch = await (await fetch(location.origin + '/cards/' + cardId + '/challenge', { cache: 'no-store' })).json();
+      const ch = await (await fetch(BASE + '/cards/' + cardId + '/challenge', { cache: 'no-store' })).json();
       if (ch.error) { alert('Cannot sign: ' + ch.error); return; }
       const sig = b64url(ed.sign(new TextEncoder().encode(ch.material), priv));   // signed locally with YOUR key
-      const r = await (await fetch(location.origin + '/approve', {
+      const r = await (await fetch(BASE + '/approve', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ card_id: cardId, signature: sig, signer_pub: pub, nonce: ch.nonce }) })).json();
       if (r.verified) { if (window.toast) window.toast('Signed — ' + cardId, 'ok'); if (window.refreshAll) window.refreshAll(); }

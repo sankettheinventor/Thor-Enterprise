@@ -1,6 +1,8 @@
 // Same-origin client for the Manager DashboardAPI. No secrets here — reads are public; the SIGN path
 // (sign.js) holds the operator key in the browser only.
-const base = typeof location !== 'undefined' ? location.origin : ''
+// Normally same-origin (the PWA is served by the plane at :7080/app/). Fall back to the local plane if the
+// origin isn't http(s) (e.g. opened from a non-served context) so the app still reaches the API.
+const base = (typeof location !== 'undefined' && /^https?:/.test(location.origin || '')) ? location.origin : 'http://localhost:7080'
 
 export async function get(path) {
   const r = await fetch(base + path, { cache: 'no-store' })
