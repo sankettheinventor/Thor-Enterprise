@@ -265,10 +265,13 @@ def boot() -> list[tuple[object, int]]:
     from dashboard import push as _push
     manager.on_card_raised = lambda cid, t, fid, st: _push.send(
         "THOR — signature needed", f"{t} · {fid} is awaiting your signature", "/app/")
+    # no-store on the shell so a browser never renders a STALE cockpit.html after an update (the data
+    # fetches are already no-store; the HTML document itself was the one cacheable surface).
+    _no_cache = {"Cache-Control": "no-store, must-revalidate"}
     dashboard_api.app.add_api_route(       # serve the static cockpit + shared theme at :7080/
-        "/", lambda: FileResponse(str(COCKPIT)), include_in_schema=False)
+        "/", lambda: FileResponse(str(COCKPIT), headers=_no_cache), include_in_schema=False)
     dashboard_api.app.add_api_route(
-        "/dashboard.css", lambda: FileResponse(str(DASH_CSS)), include_in_schema=False)
+        "/dashboard.css", lambda: FileResponse(str(DASH_CSS), headers=_no_cache), include_in_schema=False)
     # THOR Mobile: the React cockpit (laptop + phone, installable PWA) at :7080/app/ — same Manager truth,
     # real-time via /stream. Served only if built (`cd ui && npm ci && npm run build`).
     ui_dist = REPO / "ui" / "dist"

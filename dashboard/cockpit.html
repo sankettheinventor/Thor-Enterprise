@@ -938,6 +938,9 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
   import { sha512 } from 'https://esm.sh/@noble/hashes@1.4.0/sha512';
   ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));   // ed25519 needs sha512
 
+  // This module is a SEPARATE scope from the polling IIFE above — it cannot see that block's `const BASE`.
+  // Resolve its own (same logic) so the sign/register/challenge fetches below don't throw ReferenceError.
+  const BASE = (typeof location !== 'undefined' && /^https?:/.test(location.origin || '')) ? location.origin : 'http://localhost:7080';
   const b64url = b => btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   function operatorKey() {
     let hex = localStorage.getItem('thor_op_key');
