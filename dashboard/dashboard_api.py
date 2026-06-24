@@ -27,10 +27,18 @@ _commander = require_role(COMMANDER)   # the authority surface: approve/reject c
 
 # Security response headers. frame-ancestors/X-Frame-Options:DENY stop the cockpit (esp. the Sign button —
 # the operator signature is the ultimate authority) from being framed for CLICKJACKING; the CSP contains any
-# XSS (defense-in-depth on top of React's escaping); nosniff/Referrer-Policy are standard hardening. The CSP
-# allows exactly what the cockpit needs (self bundle, inline styles, Google Fonts, same-origin SSE).
-_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
+# XSS (defense-in-depth on top of React's escaping); nosniff/Referrer-Policy are standard hardening.
+# The CEO cockpit (served at /) is hand-written first-party HTML that uses INLINE <script> blocks and INLINE
+# onclick handlers, and imports @noble/ed25519 from esm.sh for in-browser signing — so script-src MUST allow
+# 'unsafe-inline' (covers inline scripts + inline event handlers) and https://esm.sh, or the browser silently
+# blocks the whole cockpit (dead nav, frozen "connecting…"). The React PWA (/app/) is a clean external bundle
+# and doesn't rely on this. The clickjacking defence that actually mattered — frame-ancestors 'none' +
+# X-Frame-Options — stays strict.
+_CSP = ("default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' https://esm.sh; "
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+        "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
+        "connect-src 'self' https://esm.sh; "
         "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'")
 _SEC_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff",
                 "Referrer-Policy": "no-referrer", "Content-Security-Policy": _CSP,
