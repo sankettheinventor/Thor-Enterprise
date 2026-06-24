@@ -41,7 +41,7 @@ os.environ.setdefault("THOR_PG_VOLUME", "thor-pgdata-dev")
 
 import psycopg
 import uvicorn
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 import dashboard.dashboard_api as dashboard_api
 import manager.api as manager_api
@@ -272,6 +272,13 @@ def boot() -> list[tuple[object, int]]:
         "/", lambda: FileResponse(str(COCKPIT), headers=_no_cache), include_in_schema=False)
     dashboard_api.app.add_api_route(
         "/dashboard.css", lambda: FileResponse(str(DASH_CSS), headers=_no_cache), include_in_schema=False)
+    # self-hosted signing crypto (pinned @noble bundles) — served same-origin so the cockpit's Ed25519
+    # signing has NO external-CDN dependency on the authority path.
+    _VENDOR = REPO / "dashboard" / "vendor"
+    dashboard_api.app.add_api_route(
+        "/vendor/{name}", lambda name: FileResponse(str(_VENDOR / name), media_type="text/javascript")
+        if (_VENDOR / name).resolve().parent == _VENDOR.resolve() and (_VENDOR / name).is_file()
+        else JSONResponse({"detail": "not found"}, status_code=404), include_in_schema=False)
     # THOR Mobile: the React cockpit (laptop + phone, installable PWA) at :7080/app/ — same Manager truth,
     # real-time via /stream. Served only if built (`cd ui && npm ci && npm run build`).
     ui_dist = REPO / "ui" / "dist"

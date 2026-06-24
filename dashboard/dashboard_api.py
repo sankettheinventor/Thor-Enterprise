@@ -35,10 +35,10 @@ _commander = require_role(COMMANDER)   # the authority surface: approve/reject c
 # and doesn't rely on this. The clickjacking defence that actually mattered — frame-ancestors 'none' +
 # X-Frame-Options — stays strict.
 _CSP = ("default-src 'self'; "
-        "script-src 'self' 'unsafe-inline' https://esm.sh; "
+        "script-src 'self' 'unsafe-inline'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; "
-        "connect-src 'self' https://esm.sh; "
+        "connect-src 'self'; "
         "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'")
 _SEC_HEADERS = {"X-Frame-Options": "DENY", "X-Content-Type-Options": "nosniff",
                 "Referrer-Policy": "no-referrer", "Content-Security-Policy": _CSP,

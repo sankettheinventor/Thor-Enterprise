@@ -31,12 +31,11 @@ def _script_src(csp: str) -> str:
 
 
 def test_cockpit_actually_uses_inline_scripts_and_handlers():
-    """Establish the requirement: the cockpit IS built from inline scripts + inline onclick + an esm.sh
-    import. (If this ever stops being true, the CSP can be tightened — and these guards updated.)"""
+    """Establish the requirement: the cockpit IS built from inline scripts + inline onclick handlers.
+    (If this ever stops being true, script-src can be tightened — and these guards updated.)"""
     html = COCKPIT.read_text(encoding="utf-8")
     assert re.search(r"<script>\s*\n", html) or "<script>" in html, "cockpit has an inline <script> block"
     assert re.search(r'onclick="[a-zA-Z]', html), "cockpit wires buttons via inline onclick handlers"
-    assert "esm.sh" in html, "cockpit imports the Ed25519 signing lib from esm.sh"
 
 
 def test_csp_permits_the_cockpits_inline_scripts():
@@ -50,11 +49,17 @@ def test_csp_permits_the_cockpits_inline_scripts():
         f"and onclick in the cockpit (dead nav, frozen 'connecting'). Use 'unsafe-inline' or per-request nonces.")
 
 
-def test_csp_permits_the_signing_lib_origin():
-    """The in-browser Ed25519 signing imports @noble from esm.sh; if script-src/connect-src don't allow it,
-    the Sign button throws and merges can't be authorized from the cockpit."""
-    csp = _served_csp()
-    assert "esm.sh" in _script_src(csp), "script-src must allow https://esm.sh (the signing lib import)"
+def test_signing_crypto_is_self_hosted_not_cdn():
+    """Supply-chain guard: the in-browser Ed25519 signing crypto (the highest-authority path) must be
+    served SAME-ORIGIN, not pulled from an external CDN. The cockpit imports from /vendor/, and script-src
+    must NOT whitelist any external http(s) origin (no esm.sh / no CDN regression)."""
+    html = COCKPIT.read_text(encoding="utf-8")
+    assert "/vendor/noble-ed25519.js" in html and "/vendor/noble-sha512.js" in html, \
+        "cockpit must import the signing crypto from the self-hosted /vendor/ path"
+    assert "esm.sh" not in html, "no external CDN import in the cockpit (supply-chain on the authority path)"
+    src = _script_src(_served_csp())
+    assert "https://" not in src and "http://" not in src, \
+        f"script-src ({src!r}) whitelists an external origin — signing crypto must be self-hosted only"
 
 
 def test_csp_still_blocks_framing():

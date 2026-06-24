@@ -42,6 +42,11 @@ def _make_app():
     def _root():
         return FileResponse(str(COCKPIT))
 
+    @app.get("/vendor/{name}")
+    def _vendor(name: str):
+        f = REPO / "dashboard" / "vendor" / name
+        return FileResponse(str(f), media_type="text/javascript")
+
     for path in ["/state/summary", "/kanban", "/rooms/live", "/cards", "/audit/feed", "/cost",
                  "/findings", "/lies", "/health/system", "/threats", "/progress", "/bugs"]:
         app.add_api_route(path, lambda: JSONResponse(_STUB), include_in_schema=False)
