@@ -1,0 +1,24 @@
+# THOR — Alertmanager routing. 'page' severity goes to the on-call pager; 'warn' to a low-urgency channel.
+# Replace the webhook URLs with your real PagerDuty/Opsgenie/Slack endpoints (keep secrets out of git —
+# use env-substituted values or a secrets mount).
+route:
+  receiver: oncall-pager
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 1h
+  routes:
+    - matchers: ['severity="warn"']
+      receiver: low-urgency
+      repeat_interval: 12h
+
+receivers:
+  - name: oncall-pager
+    webhook_configs:
+      # e.g. PagerDuty Events API v2 / Opsgenie / a Slack-incoming-webhook bridge
+      - url: "${THOR_PAGER_WEBHOOK_URL}"
+        send_resolved: true
+  - name: low-urgency
+    webhook_configs:
+      - url: "${THOR_LOW_URGENCY_WEBHOOK_URL}"
+        send_resolved: true

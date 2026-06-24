@@ -1,0 +1,62 @@
+# THOR — Prometheus alert rules. Answers the production-readiness question "how will we know it broke?"
+# over the /metrics the plane already emits. Every alert carries a runbook_url so the pager links straight
+# to remediation (docs/ops/RUNBOOK.md). Wire these into Prometheus via deploy/monitoring/prometheus.yml and
+# route them to a pager via deploy/monitoring/alertmanager.yml.
+groups:
+  - name: thor-availability
+    rules:
+      - alert: THORControlPlaneDown
+        expr: up{job="thor"} == 0
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "THOR control plane unreachable"
+          description: "Prometheus cannot scrape THOR /metrics for >1m — the plane is down or the host is gone."
+          runbook_url: "https://github.com/sankettheinventor/thor/blob/main/docs/ops/RUNBOOK.md#control-plane-down"
+
+      - alert: THORLedgerDisconnected
+        expr: thor_connected == 0
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "THOR disconnected from its ledger (Postgres)"
+          description: "thor_connected=0 for >1m — the Manager cannot reach Postgres; all governance reads/writes fail."
+          runbook_url: "https://github.com/sankettheinventor/thor/blob/main/docs/ops/RUNBOOK.md#ledger-disconnected"
+
+  - name: thor-governance
+    rules:
+      - alert: THORSentinelHalted
+        expr: thor_sentinel_halted == 1
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "THOR Sentinel HALTED the line"
+          description: "A critical governor failed; the Sentinel killed rooms and is refusing new work. The build line is stopped."
+          runbook_url: "https://github.com/sankettheinventor/thor/blob/main/docs/ops/RUNBOOK.md#sentinel-halted"
+
+      - alert: THORThreatActive
+        expr: thor_threats_active > 0
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "THOR threat detector raised {{ $value }} active attack signature(s)"
+          description: "Named, scored attack signals over the window (scope-probing / exfiltration / signature-forgery / ledger-tamper)."
+          runbook_url: "https://github.com/sankettheinventor/thor/blob/main/docs/ops/RUNBOOK.md#threat-active"
+
+      - alert: THORDishonestyCaught
+        expr: increase(thor_lies_caught_total[10m]) > 0
+        for: 0m
+        labels: { severity: warn }
+        annotations:
+          summary: "THOR caught a cook lying (claim != reality)"
+          description: "{{ $value }} new dishonest-cook event(s) in 10m. Expected during adversarial work; investigate if unexpected."
+          runbook_url: "https://github.com/sankettheinventor/thor/blob/main/docs/ops/RUNBOOK.md#dishonesty-caught"
+
+      - alert: THORFrontierCallLeak
+        expr: thor_frontier_calls_total > 0
+        for: 0m
+        labels: { severity: page }
+        annotations:
+          summary: "THOR Self-Audit made a frontier API call (must stay 0)"
+          description: "The zero-token-cost invariant is broken — the local-only auditor reached an external model. Possible misconfig or exfiltration."
+          runbook_url: "https://github.com/sankettheinventor/thor/blob/main/docs/ops/RUNBOOK.md#frontier-leak"

@@ -1,0 +1,31 @@
+# THOR — observability + alerting overlay. Run alongside docker-compose.prod.yml:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.monitoring.yml up -d
+# Prometheus scrapes the plane's /metrics and evaluates deploy/monitoring/alerts.yml; Alertmanager routes
+# 'page' alerts to the on-call pager (set THOR_PAGER_WEBHOOK_URL). This is the "how will we know it broke"
+# layer the production-readiness audit requires.
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    restart: unless-stopped
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    restart: unless-stopped
+    environment:
+      - THOR_PAGER_WEBHOOK_URL=${THOR_PAGER_WEBHOOK_URL:-http://localhost:5001/noop}
+      - THOR_LOW_URGENCY_WEBHOOK_URL=${THOR_LOW_URGENCY_WEBHOOK_URL:-http://localhost:5001/noop}
+    volumes:
+      - ./deploy/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+
+volumes:
+  prometheus_data:
