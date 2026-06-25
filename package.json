@@ -16,7 +16,16 @@
   },
   "scripts": {
     "preinstall": "",
-    "postinstall": ""
+    "postinstall": "",
+    "thor": "node bin/thor.js",
+    "dev": "bash tools/thor-up.sh",
+    "up": "node bin/thor.js up",
+    "status": "node bin/thor.js status",
+    "logs": "node bin/thor.js logs",
+    "down": "node bin/thor.js down",
+    "qa": "make qa",
+    "prove": "make prove",
+    "build:ui": "cd ui && npm ci && npm run build"
   },
   "dependencies": {},
   "license": "UNLICENSED",
