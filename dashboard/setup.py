@@ -15,6 +15,16 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 _THOR_DIR = Path(os.path.expanduser("~/.thor"))
 _TOKEN_FILE = _THOR_DIR / "claude_token"
+_CONSENT_FILE = _THOR_DIR / "consent.json"
+
+# Frontier models THOR can drive as the cook. Claude is first-class (login auto-discovered); the others
+# run via the generic runtime with the user's own key/login. THOR uses NONE of them until the user consents.
+_PROVIDERS = {
+    "claude": {"label": "Claude (Anthropic)", "cook": "claude-code", "first_class": True},
+    "codex": {"label": "ChatGPT / Codex (OpenAI)", "cook": "generic", "first_class": False},
+    "kimi": {"label": "Kimi (Moonshot)", "cook": "generic", "first_class": False},
+    "other": {"label": "Other frontier model", "cook": "generic", "first_class": False},
+}
 
 # image -> (Dockerfile, build context) for the two images THOR needs to run cooks + verdicts
 _IMAGES = {
@@ -72,17 +82,58 @@ def claude_source() -> str:
     return "none"
 
 
+def consent() -> dict:
+    """Has the user explicitly authorized THOR to use a frontier-model login on their behalf, and which?
+    THOR must NOT spend the user's subscription without this. Returns {authorized, model}."""
+    try:
+        import json
+        d = json.loads(_CONSENT_FILE.read_text(encoding="utf-8"))
+        if d.get("authorized") and d.get("model") in _PROVIDERS:
+            return {"authorized": True, "model": d["model"]}
+    except Exception:  # noqa: BLE001
+        pass
+    return {"authorized": False, "model": None}
+
+
+def grant_consent(model: str) -> dict:
+    """Record the user's explicit permission to use <model> as the AI builder (their subscription/key)."""
+    if model not in _PROVIDERS:
+        return {"ok": False, "reason": f"unknown model {model}"}
+    import json
+    _THOR_DIR.mkdir(parents=True, exist_ok=True)
+    _CONSENT_FILE.write_text(json.dumps({"authorized": True, "model": model}), encoding="utf-8")
+    try:
+        os.chmod(_THOR_DIR, 0o700)
+    except OSError:
+        pass
+    return {"ok": True, "model": model, "cook": _PROVIDERS[model]["cook"]}
+
+
+def revoke_consent() -> dict:
+    try:
+        _CONSENT_FILE.unlink()
+    except OSError:
+        pass
+    return {"ok": True}
+
+
 def check() -> dict:
     """Full requirement status for the Setup wizard. Pure detection, no side effects."""
     docker = _docker_ok()
     images = {tag: (_image_present(tag) if docker else False) for tag in _IMAGES}
     claude = claude_connected()
-    ready = docker and all(images.values()) and claude
+    con = consent()
+    providers = [{"id": k, "label": v["label"], "first_class": v["first_class"],
+                  "detected": (k == "claude" and claude)} for k, v in _PROVIDERS.items()]
+    # THOR is only "ready" once the user has CONSENTED to a model AND that model is usable
+    ready = docker and all(images.values()) and con["authorized"] and (claude if con["model"] == "claude" else True)
     return {
         "docker": docker,
         "images": [{"tag": t, "present": images[t], "desc": _IMAGES[t][1]} for t in _IMAGES],
         "claude": claude,
         "claude_source": claude_source(),
+        "consent": con,
+        "providers": providers,
         "ready": ready,
         "build": dict(_build),   # current/last build progress
     }

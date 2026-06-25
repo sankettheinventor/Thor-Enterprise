@@ -104,6 +104,10 @@ class ClaudeTokenIn(BaseModel):
     token: str = Field(min_length=20, max_length=4000)
 
 
+class ConsentIn(BaseModel):
+    model: str = Field(min_length=1, max_length=40)
+
+
 class Sig(BaseModel):
     card_id: str
     signature: str
@@ -284,6 +288,20 @@ def setup_claude(c: ClaudeTokenIn, _user=Depends(_operator)):
     """Connect Claude ONCE (token from `claude setup-token`); stored for every room to reuse."""
     from dashboard import setup
     return setup.connect_claude(c.token)
+
+
+@app.post("/setup/consent")
+def setup_consent(c: ConsentIn, _user=Depends(_operator)):
+    """Record the user's EXPLICIT permission for THOR to use their <model> login/subscription as the AI
+    builder. THOR uses no frontier model until this is granted; the grant is written to the audit ledger."""
+    from dashboard import setup
+    r = setup.grant_consent(c.model)
+    if r.get("ok") and _service is not None:
+        try:    # auditable: the permission is a signed, hash-chained event like everything else
+            _service.manager._record("ai.consent.granted", {"model": c.model, "cook": r.get("cook")})
+        except Exception:  # noqa: BLE001
+            pass
+    return r
 
 
 @app.delete("/features/{feature_id}")

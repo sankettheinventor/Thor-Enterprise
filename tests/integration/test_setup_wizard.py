@@ -21,6 +21,29 @@ def test_setup_check_endpoint():
     assert r.status_code == 200 and "ready" in body and "claude_source" in body
 
 
+def test_consent_is_required_and_round_trips(tmp_path, monkeypatch):
+    """THOR must not use a frontier-model login until the user explicitly consents."""
+    from dashboard import setup
+    monkeypatch.setattr(setup, "_THOR_DIR", tmp_path)
+    monkeypatch.setattr(setup, "_CONSENT_FILE", tmp_path / "consent.json")
+    assert setup.consent()["authorized"] is False
+    assert setup.grant_consent("bogus-model")["ok"] is False        # only known providers
+    assert setup.grant_consent("claude")["ok"] is True
+    assert setup.consent() == {"authorized": True, "model": "claude"}
+    setup.revoke_consent()
+    assert setup.consent()["authorized"] is False
+
+
+def test_build_loop_is_gated_on_consent(monkeypatch):
+    """The live build loop must NOT spend the user's subscription without consent."""
+    from sdlc import build_driver
+    from dashboard import setup
+    monkeypatch.setattr(setup, "consent", lambda: {"authorized": False, "model": None})
+    assert build_driver._ai_consented() is False
+    monkeypatch.setattr(setup, "consent", lambda: {"authorized": True, "model": "claude"})
+    assert build_driver._ai_consented() is True
+
+
 def test_claude_source_reports_existing_login(tmp_path, monkeypatch):
     """The wizard must distinguish 'reusing your existing login (nothing to do)' from 'needs a paste'."""
     from dashboard import setup

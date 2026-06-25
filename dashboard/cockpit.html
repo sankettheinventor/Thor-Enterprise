@@ -566,14 +566,26 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
         '<button class="btn btn-sm btn-brand" onclick="thorBuild(\'' + esc(img.tag) + '\')">Build &amp; Download</button>'
       html += setupRow(img.desc, img.present, btn)
     }
-    // Claude: most users are ALREADY logged in (VS Code / desktop) and THOR reuses it — nothing to do.
-    const claudeLabel = s.claude
-      ? (s.claude_source === 'existing' ? 'Claude — reusing your existing login (nothing to do)'
-         : s.claude_source === 'connected' ? 'Claude — connected (reused by every build)'
-         : 'Claude — connected')
-      : 'Claude login needed (only if you have never signed into Claude anywhere)'
-    const cbtn = s.claude ? '' : '<button class="btn btn-sm btn-brand" onclick="openM(\'m-claude\')">Connect Claude</button>'
-    html += setupRow(claudeLabel, s.claude, cbtn)
+    // PERMISSION: THOR must not spend the user's subscription without explicit consent. Ask which model
+    // it may use, and confirm. (Most users are already logged into Claude, so that's just one "Allow".)
+    const con = s.consent || { authorized: false }
+    if (con.authorized && !window._consentEdit) {
+      const note = (con.model === 'claude' && s.claude_source === 'existing')
+        ? ' (reusing your existing login — nothing else to do)' : ''
+      html += setupRow('Authorized to use your ' + esc(con.model) + ' login' + note, true,
+        '<button class="btn btn-sm" onclick="window._consentEdit=true;openSetup()">Change</button>')
+    } else {
+      const opts = (s.providers || []).map(p =>
+        '<option value="' + esc(p.id) + '"' + (p.detected ? ' selected' : '') + '>' +
+        esc(p.label) + (p.detected ? ' — found on your computer' : '') + '</option>').join('')
+      html += '<div style="padding:11px 12px;background:var(--s1);border:1px solid var(--line);border-radius:8px">' +
+        '<div class="f13 w6">May THOR use your AI subscription to build?</div>' +
+        '<div class="f12 ink3" style="margin:4px 0 9px">It runs the AI builder on YOUR login/plan (no extra cost). Pick which one and allow it.</div>' +
+        '<div class="row g8"><select class="field" id="consent-model" style="flex:1">' + opts + '</select>' +
+        '<button class="btn btn-brand btn-sm" onclick="thorConsent(document.getElementById(\'consent-model\').value)">Allow</button></div>' +
+        (s.claude ? '' : '<div class="f11 ink3" style="margin-top:7px">Not signed into Claude anywhere? ' +
+          '<a href="#" onclick="openM(\'m-claude\');return false">Connect Claude</a> (one-time).</div>') + '</div>'
+    }
     if (s.ready) html += '<div class="f13" style="color:var(--ok);font-weight:600;margin-top:4px">✓ All set — THOR is ready to build.</div>'
     $('setup-rows').innerHTML = html
   }
@@ -604,8 +616,15 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
     if (r.ok) { toast('Claude connected — every build reuses this', 'ok'); closeM('m-claude'); $('claude-token').value = ''; loadSetup(true) }
     else toast(r.reason || 'Invalid token', 'bad')
   }
+  async function thorConsent(model) {
+    if (!model) return
+    const r = await post('/setup/consent', { model })
+    if (r.ok) { window._consentEdit = false; toast('Authorized — THOR may use your ' + model + ' login', 'ok'); loadSetup(true) }
+    else toast(r.reason || 'Could not authorize', 'bad')
+  }
   window.openSetup = () => loadSetup(true)
   window.thorBuild = thorBuild
+  window.thorConsent = thorConsent
   window.connectClaude = connectClaude
   loadSetup(false)   // on load: show the Setup button + auto-open the wizard if anything is missing
 

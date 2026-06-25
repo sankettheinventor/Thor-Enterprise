@@ -40,6 +40,16 @@ def _slice_for(feature: dict) -> dict:
             "scope_files": [code, test], "planned_test": test, "regression_file": test, "code_file": code}
 
 
+def _ai_consented() -> bool:
+    """True only if the user explicitly authorized THOR to use a frontier-model login (cockpit consent).
+    Fail-open ONLY when the consent module isn't available (e.g. unit tests) so existing flows are unchanged."""
+    try:
+        from dashboard import setup
+        return bool(setup.consent().get("authorized"))
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def _clean_main(repo: str) -> None:
     """Reset the shared worktree to a pristine `main` before a build. The control plane drives features
     one at a time on one worktree; without this, feature N's branch is cut from feature N-1's HEAD, so its
@@ -119,7 +129,9 @@ class BuildLoop:
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
-                if len(self._running) < self.capacity:
+                if len(self._running) < self.capacity and _ai_consented():
+                    # CONSENT GATE: never spend the user's frontier-model subscription without their explicit
+                    # permission. Until the cockpit's "Allow" is granted, the loop simply does not dispatch.
                     ready = [f for f in self.manager.list_features()
                              if f.get("status") == "ready" and f["feature_id"] not in self._running]
                     for f in ready[: self.capacity - len(self._running)]:
