@@ -566,8 +566,14 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
         '<button class="btn btn-sm btn-brand" onclick="thorBuild(\'' + esc(img.tag) + '\')">Build &amp; Download</button>'
       html += setupRow(img.desc, img.present, btn)
     }
+    // Claude: most users are ALREADY logged in (VS Code / desktop) and THOR reuses it — nothing to do.
+    const claudeLabel = s.claude
+      ? (s.claude_source === 'existing' ? 'Claude — reusing your existing login (nothing to do)'
+         : s.claude_source === 'connected' ? 'Claude — connected (reused by every build)'
+         : 'Claude — connected')
+      : 'Claude login needed (only if you have never signed into Claude anywhere)'
     const cbtn = s.claude ? '' : '<button class="btn btn-sm btn-brand" onclick="openM(\'m-claude\')">Connect Claude</button>'
-    html += setupRow('Claude login (the AI builder — once, reused everywhere)', s.claude, cbtn)
+    html += setupRow(claudeLabel, s.claude, cbtn)
     if (s.ready) html += '<div class="f13" style="color:var(--ok);font-weight:600;margin-top:4px">✓ All set — THOR is ready to build.</div>'
     $('setup-rows').innerHTML = html
   }

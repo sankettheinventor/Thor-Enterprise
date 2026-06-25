@@ -17,7 +17,21 @@ def test_setup_check_shape():
 def test_setup_check_endpoint():
     import dashboard.dashboard_api as dapi
     r = TestClient(dapi.app).get("/setup/check")
-    assert r.status_code == 200 and "ready" in r.json()
+    body = r.json()
+    assert r.status_code == 200 and "ready" in body and "claude_source" in body
+
+
+def test_claude_source_reports_existing_login(tmp_path, monkeypatch):
+    """The wizard must distinguish 'reusing your existing login (nothing to do)' from 'needs a paste'."""
+    from dashboard import setup
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+    monkeypatch.setattr(setup, "_TOKEN_FILE", tmp_path / "no_thor_token")
+    monkeypatch.setattr("os.path.expanduser", lambda p: p.replace("~", str(tmp_path)))
+    monkeypatch.setattr("glob.glob", lambda p: [])
+    assert setup.claude_source() == "none"                       # nothing anywhere -> paste fallback
+    (tmp_path / ".claude").mkdir(parents=True)
+    (tmp_path / ".claude" / ".credentials.json").write_text("{}")
+    assert setup.claude_source() == "existing"                   # existing Claude login -> nothing to do
 
 
 def test_connect_claude_rejects_junk_and_writes_token(tmp_path, monkeypatch):

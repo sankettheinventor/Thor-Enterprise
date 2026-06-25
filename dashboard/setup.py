@@ -53,6 +53,25 @@ def claude_connected() -> bool:
         return False
 
 
+def claude_source() -> str:
+    """WHERE the Claude login came from, so the cockpit can tell the user whether they need to do anything:
+      env           - an explicit CLAUDE_CODE_OAUTH_TOKEN
+      connected     - the cockpit 'Connect Claude' token (~/.thor/claude_token)
+      existing      - REUSING the user's existing Claude Code / desktop login (nothing to do)
+      none          - not logged in anywhere (the paste fallback is needed)"""
+    import glob as _glob
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return "env"
+    if _TOKEN_FILE.exists() and _TOKEN_FILE.read_text(encoding="utf-8").strip():
+        return "connected"
+    for p in [os.path.expanduser("~/.thor/.credentials.json"),
+              os.path.expanduser("~/.claude/.credentials.json"),
+              *_glob.glob("/mnt/c/Users/*/.claude/.credentials.json")]:
+        if os.path.exists(p):
+            return "existing"
+    return "none"
+
+
 def check() -> dict:
     """Full requirement status for the Setup wizard. Pure detection, no side effects."""
     docker = _docker_ok()
@@ -63,6 +82,7 @@ def check() -> dict:
         "docker": docker,
         "images": [{"tag": t, "present": images[t], "desc": _IMAGES[t][1]} for t in _IMAGES],
         "claude": claude,
+        "claude_source": claude_source(),
         "ready": ready,
         "build": dict(_build),   # current/last build progress
     }
