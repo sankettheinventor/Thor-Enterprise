@@ -205,6 +205,7 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
   <div class="topbar-right">
     <span class="chip c-ok" title="Ed25519 signing — your key, signed in your browser">sign enabled</span>
     <div class="live-pill"><span class="np-live"></span> <span id="live-text">connecting</span></div>
+    <button class="btn btn-sm" id="setup-btn" style="display:none" onclick="openSetup()">⚙ Setup</button>
     <button class="btn btn-brand btn-sm" onclick="openM('m-task')">+ New task</button>
   </div>
 </header>
@@ -466,6 +467,33 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
   </div>
 </div>
 
+<!-- ══ SETUP WIZARD ══ -->
+<div class="mwrap" id="m-setup">
+  <div class="mbg" onclick="closeM('m-setup')"></div>
+  <div class="mbox" style="max-width:560px">
+    <div class="mbox-title">THOR — System Setup</div>
+    <div class="mbox-sub">THOR checks what it needs and sets up the rest for you. No terminal required.</div>
+    <div id="setup-rows" style="margin-top:14px;display:flex;flex-direction:column;gap:10px"></div>
+    <div id="setup-build-log" class="f11 mono ink3" style="display:none;margin-top:12px;max-height:160px;overflow:auto;background:var(--s1);border:1px solid var(--line);border-radius:6px;padding:10px"></div>
+    <div class="row g8 mt8"><button class="btn btn-ghost" onclick="closeM('m-setup')">Close</button></div>
+  </div>
+</div>
+
+<!-- ══ CONNECT CLAUDE ══ -->
+<div class="mwrap" id="m-claude">
+  <div class="mbg" onclick="closeM('m-claude')"></div>
+  <div class="mbox" style="max-width:520px">
+    <div class="mbox-title">Connect Claude — once</div>
+    <div class="mbox-sub">Sign in once; every AI build reuses it. No API key, no extra cost — your plan.</div>
+    <ol class="f13 ink2" style="margin:12px 0 6px 18px;line-height:1.7">
+      <li>In a terminal, run: <span class="mono" style="background:var(--s1);padding:2px 6px;border-radius:4px">claude setup-token</span></li>
+      <li>Copy the token it prints, paste it below, and Connect.</li>
+    </ol>
+    <div class="fg"><label class="field-lbl">Claude token</label><input type="password" class="field" id="claude-token" placeholder="sk-ant-oat..."></div>
+    <div class="row g8 mt8"><button class="btn btn-brand" onclick="connectClaude()">Connect</button><button class="btn btn-ghost" onclick="closeM('m-claude')">Cancel</button></div>
+  </div>
+</div>
+
 <div class="toast-stack" id="toasts"></div>
 
 <script>
@@ -524,6 +552,56 @@ textarea.field{resize:vertical;min-height:80px;line-height:1.6}
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
   window.go = go;
+
+  // ── SETUP WIZARD (self-install: checks requirements, builds images, connects Claude — no terminal) ──
+  function setupRow(label, ok, action) {
+    return '<div class="rowb" style="align-items:center;gap:10px">' +
+      '<div><span class="chip ' + (ok ? 'c-ok' : 'c-warn') + '">' + (ok ? '✓ ready' : 'needs setup') + '</span> ' +
+      '<span class="f13">' + esc(label) + '</span></div>' + (action || '') + '</div>'
+  }
+  function renderSetup(s) {
+    let html = setupRow('Docker engine', s.docker, s.docker ? '' : '<span class="f11 ink3">run the THOR installer</span>')
+    for (const img of (s.images || [])) {
+      const btn = img.present ? '' :
+        '<button class="btn btn-sm btn-brand" onclick="thorBuild(\'' + esc(img.tag) + '\')">Build &amp; Download</button>'
+      html += setupRow(img.desc, img.present, btn)
+    }
+    const cbtn = s.claude ? '' : '<button class="btn btn-sm btn-brand" onclick="openM(\'m-claude\')">Connect Claude</button>'
+    html += setupRow('Claude login (the AI builder — once, reused everywhere)', s.claude, cbtn)
+    if (s.ready) html += '<div class="f13" style="color:var(--ok);font-weight:600;margin-top:4px">✓ All set — THOR is ready to build.</div>'
+    $('setup-rows').innerHTML = html
+  }
+  async function loadSetup(open) {
+    try {
+      const s = await get('/setup/check')
+      $('setup-btn').style.display = s.ready ? 'none' : ''
+      renderSetup(s)
+      if (open || (!s.ready && !window._setupSeen)) { window._setupSeen = true; openM('m-setup') }
+    } catch (e) { /* plane not reachable yet */ }
+  }
+  async function thorBuild(tag) {
+    await post('/setup/build', { image: tag })
+    $('setup-build-log').style.display = 'block'
+    pollBuild()
+  }
+  async function pollBuild() {
+    try {
+      const b = await get('/setup/build')
+      const el = $('setup-build-log'); el.textContent = (b.log || []).join('\n'); el.scrollTop = 1e9
+      if (b.running) { setTimeout(pollBuild, 1500); return }
+      toast(b.ok ? 'Image ready' : 'Build failed', b.ok ? 'ok' : 'bad'); loadSetup(true)
+    } catch (e) { /* ignore */ }
+  }
+  async function connectClaude() {
+    const t = ($('claude-token').value || '').trim()
+    const r = await post('/setup/claude', { token: t })
+    if (r.ok) { toast('Claude connected — every build reuses this', 'ok'); closeM('m-claude'); $('claude-token').value = ''; loadSetup(true) }
+    else toast(r.reason || 'Invalid token', 'bad')
+  }
+  window.openSetup = () => loadSetup(true)
+  window.thorBuild = thorBuild
+  window.connectClaude = connectClaude
+  loadSetup(false)   // on load: show the Setup button + auto-open the wizard if anything is missing
 
   // ── TRUST BANNER (Sentinel + Self-Audit, /health/system via /state/summary.health) ──
   function renderTrust(summary) {

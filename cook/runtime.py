@@ -37,9 +37,19 @@ def discover_claude_oauth() -> str | None:
     tok = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
     if tok:
         return tok
+    # THOR-managed token written ONCE via the cockpit "Connect Claude" button, reused by EVERY room
+    # (the "log in once, works everywhere" store). A plain token file, owner-only.
+    try:
+        with open(os.path.expanduser("~/.thor/claude_token"), encoding="utf-8") as f:
+            t = f.read().strip()
+        if t:
+            return t
+    except OSError:
+        pass
     candidates: list[str] = []
     if os.environ.get("THOR_CLAUDE_CREDENTIALS"):
         candidates.append(os.environ["THOR_CLAUDE_CREDENTIALS"])
+    candidates.append(os.path.expanduser("~/.thor/.credentials.json"))     # THOR-managed json form
     candidates.append(os.path.expanduser("~/.claude/.credentials.json"))
     candidates += sorted(glob.glob("/mnt/c/Users/*/.claude/.credentials.json"))
     for path in candidates:

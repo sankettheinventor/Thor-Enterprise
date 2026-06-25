@@ -96,6 +96,14 @@ class GenesisIn(BaseModel):
     idea: str = Field(min_length=8, max_length=4000)
 
 
+class SetupBuildIn(BaseModel):
+    image: str = Field(min_length=1, max_length=80)
+
+
+class ClaudeTokenIn(BaseModel):
+    token: str = Field(min_length=20, max_length=4000)
+
+
 class Sig(BaseModel):
     card_id: str
     signature: str
@@ -249,6 +257,33 @@ def genesis(g: GenesisIn, _user=Depends(_operator)):
     import threading
     threading.Thread(target=lambda: _service.genesis(g.idea), daemon=True).start()
     return {"status": "planning", "idea": g.idea[:80]}
+
+
+@app.get("/setup/check")
+def setup_check():
+    """Cockpit Setup wizard status: Docker, the AI room images, and the Claude login. Pure detection."""
+    from dashboard import setup
+    return setup.check()
+
+
+@app.post("/setup/build")
+def setup_build(b: SetupBuildIn, _user=Depends(_operator)):
+    """Build/download a required image (the cook/room image) — runs in the background; poll /setup/build."""
+    from dashboard import setup
+    return setup.build_image(b.image)
+
+
+@app.get("/setup/build")
+def setup_build_status():
+    from dashboard import setup
+    return setup.build_status()
+
+
+@app.post("/setup/claude")
+def setup_claude(c: ClaudeTokenIn, _user=Depends(_operator)):
+    """Connect Claude ONCE (token from `claude setup-token`); stored for every room to reuse."""
+    from dashboard import setup
+    return setup.connect_claude(c.token)
 
 
 @app.delete("/features/{feature_id}")
