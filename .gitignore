@@ -10,6 +10,14 @@ __pycache__/
 .env
 *.key
 *.pem
+# Frontier-model credentials — NEVER commit the user's Claude/OpenAI/etc. login (it lives in ~/.thor,
+# but block it anywhere in a tree too, belt-and-suspenders).
+.claude/
+**/.credentials.json
+*.credentials.json
+claude_token
+consent.json
+*.oauth.json
 
 # Read-only study material — present in the tree but NEVER committed or imported (Rule 10).
 _reference/
