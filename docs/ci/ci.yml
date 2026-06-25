@@ -1,15 +1,15 @@
 name: THOR CI
 
-# ACTIVATION: copy this file to `.github/workflows/ci.yml` and push it. GitHub refuses a Personal Access
-# Token without the `workflow` scope from creating files under `.github/workflows/`, so the repo owner must
-# either (a) push it with a PAT that has the `workflow` scope, or (b) add it via the GitHub web UI
-# (Actions -> New workflow -> paste this). It is kept here (`docs/ci/`) so the definition ships in-repo and
-# every push isn't blocked by the scope rule.
+# ACTIVATION: copy this file to `.github/workflows/ci.yml` via the GitHub web UI (Actions -> New workflow
+# -> paste), OR push it with a Personal Access Token that has the `workflow` scope. GitHub refuses a token
+# WITHOUT that scope from creating files under `.github/workflows/`, so the canonical copy ships here in
+# `docs/ci/` and the repo owner activates it once. (This is why a normal `git push` of the in-repo
+# `.github/workflows/ci.yml` is rejected — not a code problem, a token-scope rule.)
 #
-# Standing safety net: the docker-free lane (`pytest -m 'not deferred'`) runs on every push and PR, so a
-# regression can't merge silently. The live lanes (`make prove` — real Docker rooms + Postgres; `make
-# launch` — the attack campaign) are run by an operator on a Docker host and are out of scope for this
-# hosted runner; this gate covers the fast, hermetic suite (the same one `make qa` runs).
+# Standing safety net once active: the docker-free lane runs on every push/PR (a regression can't merge
+# silently); a browser-smoke job renders the cockpit under the REAL CSP (the gap that let a dead cockpit
+# pass the whole suite); a guard fails the build on any AI co-author trailer. The live lanes (`make prove`
+# real Docker rooms + Postgres; `make launch` the attack campaign) are operator-run on a Docker host.
 on:
   push:
     branches: [main, "qa/**"]
@@ -51,3 +51,26 @@ jobs:
           fi
           if [ "$hits" != "0" ]; then echo "AI co-author trailer found ($hits) — not allowed"; exit 1; fi
           echo "co-author guard: clean"
+
+  browser-smoke:
+    name: cockpit renders under real CSP (browser)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies + Playwright Chromium
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      # The render test is @pytest.mark.deferred (it needs a browser); select it explicitly. It boots a
+      # tiny server that serves cockpit.html behind the REAL dashboard CSP + stub endpoints (no Postgres),
+      # and asserts the inline JS executes and nav switches panels in a CSP-enforcing browser.
+      - name: Cockpit render + nav smoke
+        run: pytest tests/integration/test_cockpit_render.py -m deferred -q
